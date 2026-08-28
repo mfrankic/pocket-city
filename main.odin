@@ -36,20 +36,29 @@ main :: proc() {
 		if rl.IsKeyPressed(.THREE) do tool = .Commercial
 		if rl.IsKeyPressed(.FOUR) do tool = .Bulldoze
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
+		if rl.IsKeyPressed(.S) {
+			city.city_save(c, city.SAVE_PATH)
+		}
+		if rl.IsKeyPressed(.L) {
+			if loaded, ok := city.city_load(city.SAVE_PATH); ok {
+				c = loaded
+				tick_acc = 0
+			}
+		}
 
 		if rl.IsMouseButtonDown(.LEFT) {
-		lot_x := int(rl.GetMouseX()) / LOT_PX
-		lot_y := (int(rl.GetMouseY()) - HUD_H) / LOT_PX
-		switch tool {
-		case .Road:
-			city.paint_road(&c, lot_x, lot_y)
-		case .Residential:
-			city.paint_zone(&c, lot_x, lot_y, .Residential)
-		case .Commercial:
-			city.paint_zone(&c, lot_x, lot_y, .Commercial)
-		case .Bulldoze:
-			city.bulldoze(&c, lot_x, lot_y)
-		}
+			lot_x := int(rl.GetMouseX()) / LOT_PX
+			lot_y := (int(rl.GetMouseY()) - HUD_H) / LOT_PX
+			switch tool {
+			case .Road:
+				city.paint_road(&c, lot_x, lot_y)
+			case .Residential:
+				city.paint_zone(&c, lot_x, lot_y, .Residential)
+			case .Commercial:
+				city.paint_zone(&c, lot_x, lot_y, .Commercial)
+			case .Bulldoze:
+				city.bulldoze(&c, lot_x, lot_y)
+			}
 		}
 
 		if !paused {
@@ -116,7 +125,7 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
 		city.city_commercial_demand(c),
 	)
 	run := "PAUSED" if paused else "RUNNING"
-	line2 := fmt.ctprintf("%s   tool: %v    1 road  2 R  3 C  4 bulldoze  space pause", run, tool)
+	line2 := fmt.ctprintf("%s   %v    1-4 tools  space pause  S save  L load", run, tool)
 	rl.DrawText(line1, 8, 8, 18, rl.WHITE)
 	rl.DrawText(line2, 8, 36, 16, rl.LIGHTGRAY)
 }

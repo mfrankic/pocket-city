@@ -1,5 +1,6 @@
 package city
 
+import "core:os"
 import "core:testing"
 
 @(test)
@@ -203,4 +204,27 @@ changing_zone_clears_the_building :: proc(t: ^testing.T) {
 	testing.expect_value(t, lot.zone, Zone.Commercial)
 	testing.expect_value(t, lot.building, Building.None)
 	testing.expect_value(t, city_population(c), 0)
+}
+
+@(test)
+save_then_load_restores_lots_and_money :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	paint_zone(&c, 1, 0, .Residential)
+	tick(&c, pick_first)
+	path := "city_roundtrip.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_money(loaded), 1989)
+	testing.expect_value(t, city_lot(loaded, 0, 0).kind, Lot_Kind.Road)
+	testing.expect_value(t, city_lot(loaded, 1, 0).building, Building.House)
+	testing.expect_value(t, city_population(loaded), 4)
+}
+
+@(test)
+load_missing_file_fails :: proc(t: ^testing.T) {
+	_, ok := city_load("city_no_such.save")
+	testing.expect(t, !ok)
 }

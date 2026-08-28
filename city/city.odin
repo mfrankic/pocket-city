@@ -1,5 +1,7 @@
 package city
 
+import "core:os"
+
 MAP_SIZE :: 32
 STARTING_MONEY :: 2000
 DEMAND_BASE :: 8
@@ -194,4 +196,64 @@ has_road_access :: proc(c: City, x, y: int) -> bool {
 		}
 	}
 	return false
+}
+
+SAVE_PATH :: "pocket-city.save"
+SAVE_VERSION :: u8(1)
+SAVE_SIZE :: 1 + 8 + MAP_SIZE * MAP_SIZE * 3
+
+city_save :: proc(c: City, path: string) -> bool {
+	buf: [SAVE_SIZE]u8
+	buf[0] = SAVE_VERSION
+	put_i64le(buf[1:9], i64(c.money))
+	i := 9
+	for lot in c.lots {
+		buf[i + 0] = u8(lot.kind)
+		buf[i + 1] = u8(lot.zone)
+		buf[i + 2] = u8(lot.building)
+		i += 3
+	}
+	return os.write_entire_file(path, buf[:]) == nil
+}
+
+city_load :: proc(path: string) -> (c: City, ok: bool) {
+	data, err := os.read_entire_file(path, context.allocator)
+	if err != nil {
+		return {}, false
+	}
+	defer delete(data)
+	if len(data) != SAVE_SIZE || data[0] != SAVE_VERSION {
+		return {}, false
+	}
+	c.money = int(get_i64le(data[1:9]))
+	i := 9
+	for &lot in c.lots {
+		if data[i] > u8(Lot_Kind.Road) ||
+		   data[i + 1] > u8(Zone.Commercial) ||
+		   data[i + 2] > u8(Building.Shop) {
+			return {}, false
+		}
+		lot.kind = Lot_Kind(data[i])
+		lot.zone = Zone(data[i + 1])
+		lot.building = Building(data[i + 2])
+		i += 3
+	}
+	return c, true
+}
+
+@(private)
+put_i64le :: proc(b: []u8, v: i64) {
+	u := transmute(u64)v
+	for j in 0 ..< 8 {
+		b[j] = u8(u >> uint(8 * j))
+	}
+}
+
+@(private)
+get_i64le :: proc(b: []u8) -> i64 {
+	u: u64
+	for j in 0 ..< 8 {
+		u |= u64(b[j]) << uint(8 * j)
+	}
+	return transmute(i64)u
 }

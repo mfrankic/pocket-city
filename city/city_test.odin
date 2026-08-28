@@ -7,6 +7,7 @@ import "core:testing"
 new_city_has_starting_stats :: proc(t: ^testing.T) {
 	c := city_new()
 	testing.expect_value(t, city_money(c), 2000)
+	testing.expect_value(t, city_tax(c), 1)
 	testing.expect_value(t, city_population(c), 0)
 	testing.expect_value(t, city_jobs(c), 0)
 	testing.expect_value(t, city_residential_demand(c), 8)
@@ -360,6 +361,18 @@ tick_collects_tax_on_population :: proc(t: ^testing.T) {
 }
 
 @(test)
+player_sets_tax_and_tick_income_uses_it :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect_value(t, city_tax(c), 1)
+	city_set_tax(&c, 3)
+	testing.expect_value(t, city_tax(c), 3)
+	paint_road(&c, 0, 0)
+	paint_zone(&c, 1, 0, .Residential)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 1997)
+}
+
+@(test)
 broke_city_cannot_spend :: proc(t: ^testing.T) {
 	c := city_new()
 	c.money = 9
@@ -406,6 +419,20 @@ changing_zone_clears_the_building :: proc(t: ^testing.T) {
 	testing.expect_value(t, lot.zone, Zone.Commercial)
 	expect_no_building(t, c, 1, 0)
 	testing.expect_value(t, city_population(c), 0)
+}
+
+@(test)
+save_then_load_keeps_tax :: proc(t: ^testing.T) {
+	c := city_new()
+	city_set_tax(&c, 5)
+	paint_road(&c, 0, 0)
+	path := "city_tax.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_tax(loaded), 5)
+	testing.expect_value(t, city_money(loaded), 1990)
 }
 
 @(test)

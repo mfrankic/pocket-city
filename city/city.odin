@@ -11,7 +11,7 @@ FOREST_COST :: 20
 HOUSE_POPULATION :: 4
 SHOP_JOBS :: 4
 FACTORY_JOBS :: 4
-TAX_PER_POP :: 1
+TAX_DEFAULT :: 1
 
 Lot_Kind :: enum {
 	Plot,
@@ -55,12 +55,14 @@ MAX_BUILDINGS :: MAP_SIZE * MAP_SIZE
 City :: struct {
 	lots:      [MAP_SIZE * MAP_SIZE]Lot,
 	money:     int,
+	tax:       int,
 	buildings: [MAX_BUILDINGS]Building,
 }
 
 city_new :: proc() -> City {
 	c := City {
 		money = STARTING_MONEY,
+		tax   = TAX_DEFAULT,
 	}
 	generate_terrain(&c)
 	return c
@@ -213,6 +215,14 @@ city_money :: proc(c: City) -> int {
 	return c.money
 }
 
+city_tax :: proc(c: City) -> int {
+	return c.tax
+}
+
+city_set_tax :: proc(c: ^City, tax: int) {
+	c.tax = max(tax, 0)
+}
+
 // ponytail: per building, not plots; 09 multiplies by footprint when 2×2 births
 city_population :: proc(c: City) -> int {
 	n := 0
@@ -277,7 +287,7 @@ tick :: proc(c: ^City, pick: Pick) {
 	if grow_factories {
 		grow(c, .Industrial, .Factory, pick)
 	}
-	c.money += TAX_PER_POP * city_population(c^)
+	c.money += c.tax * city_population(c^)
 }
 
 @(private)
@@ -333,8 +343,8 @@ has_road_access :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(3)
-SAVE_HEADER :: 1 + 8 + 2
+SAVE_VERSION :: u8(4)
+SAVE_HEADER :: 1 + 8 + 8 + 2
 LOT_BYTES :: 5
 SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS + MAP_SIZE * MAP_SIZE * LOT_BYTES
 
@@ -342,6 +352,7 @@ city_save :: proc(c: City, path: string) -> bool {
 	buf: [SAVE_MAX]u8
 	buf[0] = SAVE_VERSION
 	put_i64le(buf[1:9], i64(c.money))
+	put_i64le(buf[9:17], i64(c.tax))
 	remap: [MAX_BUILDINGS + 1]u16
 	n: u16
 	i := SAVE_HEADER
@@ -355,7 +366,7 @@ city_save :: proc(c: City, path: string) -> bool {
 		buf[i] = u8(b.kind)
 		i += 1
 	}
-	put_u16le(buf[9:11], n)
+	put_u16le(buf[17:19], n)
 	for lot in c.lots {
 		buf[i + 0] = u8(lot.kind)
 		buf[i + 1] = u8(lot.zone)
@@ -375,7 +386,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	if len(data) < SAVE_HEADER || data[0] != SAVE_VERSION {
 		return {}, false
 	}
-	count := int(get_u16le(data[9:11]))
+	count := int(get_u16le(data[17:19]))
 	if count > MAX_BUILDINGS {
 		return {}, false
 	}
@@ -383,6 +394,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		return {}, false
 	}
 	c.money = int(get_i64le(data[1:9]))
+	c.tax = int(get_i64le(data[9:17]))
 	i := SAVE_HEADER
 	for b in 0 ..< count {
 		if data[i] > u8(Building_Kind.Factory) {

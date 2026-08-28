@@ -43,6 +43,8 @@ main :: proc() {
 		if rl.IsKeyPressed(.THREE) do tool = .Commercial
 		if rl.IsKeyPressed(.FOUR) do tool = .Industrial
 		if rl.IsKeyPressed(.FIVE) do tool = .Bulldoze
+		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
+		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
 		if rl.IsKeyPressed(.S) {
 			city.city_save(c, city.SAVE_PATH)
@@ -160,17 +162,18 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	line1 := fmt.ctprintf(
-		"$%d   pop %d   jobs %d   R %d   C %d   I %d",
+		"$%d   pop %d   jobs %d   R %d   C %d   I %d   tax %d",
 		city.city_money(c),
 		city.city_population(c),
 		city.city_jobs(c),
 		city.city_residential_demand(c),
 		city.city_commercial_demand(c),
 		city.city_industrial_demand(c),
+		city.city_tax(c),
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s   %v    1-5 tools  space pause  S save  L load  wheel zoom  RMB pan",
+		"%s   %v    1-5 tools  [ ] tax  space pause  S save  L load  wheel zoom  RMB pan",
 		run,
 		tool,
 	)

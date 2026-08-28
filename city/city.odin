@@ -2,11 +2,12 @@ package city
 
 import "core:os"
 
-MAP_SIZE :: 32
+MAP_SIZE :: 64
 STARTING_MONEY :: 2000
 DEMAND_BASE :: 8
 ROAD_COST :: 10
 ZONE_COST :: 5
+FOREST_COST :: 20
 HOUSE_POPULATION :: 4
 SHOP_JOBS :: 4
 TAX_PER_POP :: 1
@@ -14,6 +15,13 @@ TAX_PER_POP :: 1
 Lot_Kind :: enum {
 	Plot,
 	Road,
+}
+
+Terrain :: enum {
+	Grass,
+	Lake,
+	Forest,
+	Rock,
 }
 
 Zone :: enum {
@@ -32,6 +40,7 @@ Lot :: struct {
 	kind:     Lot_Kind,
 	zone:     Zone,
 	building: Building,
+	terrain:  Terrain,
 }
 
 City :: struct {
@@ -40,7 +49,30 @@ City :: struct {
 }
 
 city_new :: proc() -> City {
-	return City{money = STARTING_MONEY}
+	c := City {
+		money = STARTING_MONEY,
+	}
+	generate_terrain(&c)
+	return c
+}
+
+@(private)
+generate_terrain :: proc(c: ^City) {
+	fill_terrain(c, 36, 8, 14, 8, .Lake)
+	fill_terrain(c, 10, 40, 12, 10, .Forest)
+	fill_terrain(c, 48, 48, 8, 8, .Rock)
+	fill_terrain(c, 22, 22, 8, 5, .Lake)
+	fill_terrain(c, 44, 28, 8, 8, .Forest)
+	fill_terrain(c, 8, 8, 4, 4, .Rock)
+}
+
+@(private)
+fill_terrain :: proc(c: ^City, x0, y0, w, h: int, terrain: Terrain) {
+	for y in y0 ..< y0 + h {
+		for x in x0 ..< x0 + w {
+			c.lots[y * MAP_SIZE + x].terrain = terrain
+		}
+	}
 }
 
 city_lot :: proc(c: City, x, y: int) -> Lot {
@@ -60,12 +92,16 @@ paint_road :: proc(c: ^City, x, y: int) -> bool {
 	if lot.kind == .Road {
 		return true
 	}
+	if lot.terrain != .Grass {
+		return false
+	}
 	if c.money < ROAD_COST {
 		return false
 	}
 	c.money -= ROAD_COST
 	lot^ = Lot {
-		kind = .Road,
+		kind     = .Road,
+		terrain  = lot.terrain,
 	}
 	return true
 }
@@ -76,6 +112,9 @@ paint_zone :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 	}
 	lot := &c.lots[y * MAP_SIZE + x]
 	if lot.kind == .Road {
+		return false
+	}
+	if lot.terrain != .Grass {
 		return false
 	}
 	if lot.zone == zone {
@@ -96,10 +135,23 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 	}
 	lot := &c.lots[y * MAP_SIZE + x]
 	if lot.kind == .Road {
-		lot^ = Lot{}
+		lot^ = Lot {
+			terrain = lot.terrain,
+		}
 		return true
 	}
-	lot.building = .None
+	if lot.building != .None {
+		lot.building = .None
+		return true
+	}
+	if lot.terrain == .Forest {
+		if c.money < FOREST_COST {
+			return false
+		}
+		c.money -= FOREST_COST
+		lot.terrain = .Grass
+		return true
+	}
 	return true
 }
 
@@ -199,8 +251,8 @@ has_road_access :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(1)
-SAVE_SIZE :: 1 + 8 + MAP_SIZE * MAP_SIZE * 3
+SAVE_VERSION :: u8(2)
+SAVE_SIZE :: 1 + 8 + MAP_SIZE * MAP_SIZE * 4
 
 city_save :: proc(c: City, path: string) -> bool {
 	buf: [SAVE_SIZE]u8
@@ -211,7 +263,8 @@ city_save :: proc(c: City, path: string) -> bool {
 		buf[i + 0] = u8(lot.kind)
 		buf[i + 1] = u8(lot.zone)
 		buf[i + 2] = u8(lot.building)
-		i += 3
+		buf[i + 3] = u8(lot.terrain)
+		i += 4
 	}
 	return os.write_entire_file(path, buf[:]) == nil
 }
@@ -230,13 +283,15 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	for &lot in c.lots {
 		if data[i] > u8(Lot_Kind.Road) ||
 		   data[i + 1] > u8(Zone.Commercial) ||
-		   data[i + 2] > u8(Building.Shop) {
+		   data[i + 2] > u8(Building.Shop) ||
+		   data[i + 3] > u8(Terrain.Rock) {
 			return {}, false
 		}
 		lot.kind = Lot_Kind(data[i])
 		lot.zone = Zone(data[i + 1])
 		lot.building = Building(data[i + 2])
-		i += 3
+		lot.terrain = Terrain(data[i + 3])
+		i += 4
 	}
 	return c, true
 }

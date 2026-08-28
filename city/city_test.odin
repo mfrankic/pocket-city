@@ -20,8 +20,95 @@ new_city_lots_are_empty_plots :: proc(t: ^testing.T) {
 	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
 	testing.expect_value(t, lot.zone, Zone.None)
 	testing.expect_value(t, lot.building, Building.None)
-	corner := city_lot(c, 31, 31)
+	testing.expect_value(t, lot.terrain, Terrain.Grass)
+	corner := city_lot(c, 63, 63)
 	testing.expect_value(t, corner.kind, Lot_Kind.Plot)
+}
+
+@(test)
+far_corner_accepts_a_road :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 63, 63))
+	testing.expect_value(t, city_lot(c, 63, 63).kind, Lot_Kind.Road)
+}
+
+@(test)
+new_city_has_generated_terrain :: proc(t: ^testing.T) {
+	c := city_new()
+	_, _, lake := find_terrain(c, .Lake)
+	_, _, forest := find_terrain(c, .Forest)
+	_, _, rock := find_terrain(c, .Rock)
+	testing.expect(t, lake)
+	testing.expect(t, forest)
+	testing.expect(t, rock)
+}
+
+find_terrain :: proc(c: City, want: Terrain) -> (x, y: int, ok: bool) {
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			if city_lot(c, x, y).terrain == want {
+				return x, y, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+@(test)
+cannot_paint_road_or_zone_on_lake :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Lake)
+	testing.expect(t, found)
+	money := city_money(c)
+	testing.expect(t, !paint_road(&c, x, y))
+	testing.expect(t, !paint_zone(&c, x, y, .Residential))
+	testing.expect_value(t, city_money(c), money)
+	lot := city_lot(c, x, y)
+	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
+	testing.expect_value(t, lot.zone, Zone.None)
+	testing.expect_value(t, lot.terrain, Terrain.Lake)
+}
+
+@(test)
+cannot_paint_road_or_zone_on_rock :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Rock)
+	testing.expect(t, found)
+	money := city_money(c)
+	testing.expect(t, !paint_road(&c, x, y))
+	testing.expect(t, !paint_zone(&c, x, y, .Residential))
+	testing.expect_value(t, city_money(c), money)
+	lot := city_lot(c, x, y)
+	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
+	testing.expect_value(t, lot.zone, Zone.None)
+	testing.expect_value(t, lot.terrain, Terrain.Rock)
+}
+
+@(test)
+cannot_paint_road_or_zone_on_forest :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Forest)
+	testing.expect(t, found)
+	money := city_money(c)
+	testing.expect(t, !paint_road(&c, x, y))
+	testing.expect(t, !paint_zone(&c, x, y, .Residential))
+	testing.expect_value(t, city_money(c), money)
+	lot := city_lot(c, x, y)
+	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
+	testing.expect_value(t, lot.zone, Zone.None)
+	testing.expect_value(t, lot.terrain, Terrain.Forest)
+}
+
+@(test)
+bulldoze_forest_spends_and_turns_to_grass :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Forest)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, x, y))
+	testing.expect_value(t, city_money(c), 1980)
+	lot := city_lot(c, x, y)
+	testing.expect_value(t, lot.terrain, Terrain.Grass)
+	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
 }
 
 @(test)
@@ -180,6 +267,17 @@ broke_city_cannot_spend :: proc(t: ^testing.T) {
 }
 
 @(test)
+broke_city_cannot_bulldoze_forest :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Forest)
+	testing.expect(t, found)
+	c.money = 19
+	testing.expect(t, !bulldoze(&c, x, y))
+	testing.expect_value(t, city_lot(c, x, y).terrain, Terrain.Forest)
+	testing.expect_value(t, city_money(c), 19)
+}
+
+@(test)
 house_stays_after_shop_is_bulldozed :: proc(t: ^testing.T) {
 	c := city_new()
 	paint_road(&c, 0, 0)
@@ -224,7 +322,45 @@ save_then_load_restores_lots_and_money :: proc(t: ^testing.T) {
 }
 
 @(test)
+save_then_load_restores_terrain :: proc(t: ^testing.T) {
+	c := city_new()
+	lx, ly, lake := find_terrain(c, .Lake)
+	fx, fy, forest := find_terrain(c, .Forest)
+	rx, ry, rock := find_terrain(c, .Rock)
+	testing.expect(t, lake && forest && rock)
+	path := "city_terrain.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_lot(loaded, lx, ly).terrain, Terrain.Lake)
+	testing.expect_value(t, city_lot(loaded, fx, fy).terrain, Terrain.Forest)
+	testing.expect_value(t, city_lot(loaded, rx, ry).terrain, Terrain.Rock)
+}
+
+@(test)
 load_missing_file_fails :: proc(t: ^testing.T) {
 	_, ok := city_load("city_no_such.save")
 	testing.expect(t, !ok)
+}
+
+@(test)
+load_junk_or_old_size_leaves_city_alone :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 0, 0))
+	path := "city_bad.save"
+	defer os.remove(path)
+
+	testing.expect(t, os.write_entire_file(path, []u8{9, 9, 9}) == nil)
+	_, junk_ok := city_load(path)
+	testing.expect(t, !junk_ok)
+
+	old: [1 + 8 + 32 * 32 * 3]u8
+	old[0] = 1
+	testing.expect(t, os.write_entire_file(path, old[:]) == nil)
+	_, old_ok := city_load(path)
+	testing.expect(t, !old_ok)
+
+	testing.expect_value(t, city_lot(c, 0, 0).kind, Lot_Kind.Road)
+	testing.expect_value(t, city_money(c), 1990)
 }

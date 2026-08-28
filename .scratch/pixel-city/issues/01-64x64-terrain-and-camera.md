@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] A new city is 64×64 lots, each with terrain (grass, lake, forest, or rock), generated at city creation
-- [ ] The player cannot paint a road or zone on lake or rock
-- [ ] Bulldozing forest spends money and turns that lot to grass; bulldozing grass/road/building behaves as today
-- [ ] The player can pan and zoom the map
-- [ ] Residential/commercial paint, roads, dribble growth, money, pause, and HUD still work
-- [ ] Save/load round-trips the larger map and terrain; a junk or old-size file leaves the current city alone
+- [x] A new city is 64×64 lots, each with terrain (grass, lake, forest, or rock), generated at city creation
+- [x] The player cannot paint a road or zone on lake or rock
+- [x] Bulldozing forest spends money and turns that lot to grass; bulldozing grass/road/building behaves as today
+- [x] The player can pan and zoom the map
+- [x] Residential/commercial paint, roads, dribble growth, money, pause, and HUD still work
+- [x] Save/load round-trips the larger map and terrain; a junk or old-size file leaves the current city alone

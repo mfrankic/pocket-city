@@ -11,6 +11,7 @@ new_city_has_starting_stats :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_jobs(c), 0)
 	testing.expect_value(t, city_residential_demand(c), 8)
 	testing.expect_value(t, city_commercial_demand(c), 0)
+	testing.expect_value(t, city_industrial_demand(c), 0)
 }
 
 @(test)
@@ -155,6 +156,18 @@ painting_a_zone_spends_five :: proc(t: ^testing.T) {
 }
 
 @(test)
+painting_industrial_spends_five :: proc(t: ^testing.T) {
+	c := city_new()
+	ok := paint_zone(&c, 2, 0, .Industrial)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_money(c), 1995)
+	lot := city_lot(c, 2, 0)
+	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
+	testing.expect_value(t, lot.zone, Zone.Industrial)
+	expect_no_building(t, c, 2, 0)
+}
+
+@(test)
 painting_the_same_zone_does_not_spend :: proc(t: ^testing.T) {
 	c := city_new()
 	paint_zone(&c, 2, 0, .Residential)
@@ -213,6 +226,17 @@ zoned_plot_without_road_does_not_grow :: proc(t: ^testing.T) {
 }
 
 @(test)
+industrial_without_shops_does_not_grow :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	paint_zone(&c, 1, 0, .Industrial)
+	tick(&c, pick_first)
+	expect_no_building(t, c, 1, 0)
+	testing.expect_value(t, city_jobs(c), 0)
+	testing.expect_value(t, city_industrial_demand(c), 0)
+}
+
+@(test)
 tick_grows_one_house_and_one_shop :: proc(t: ^testing.T) {
 	c := city_new()
 	paint_road(&c, 0, 0)
@@ -230,6 +254,30 @@ tick_grows_one_house_and_one_shop :: proc(t: ^testing.T) {
 }
 
 @(test)
+factory_grows_when_industrial_demand_is_positive :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 1, 0)
+	paint_zone(&c, 0, 0, .Residential)
+	paint_zone(&c, 2, 0, .Commercial)
+	paint_zone(&c, 1, 1, .Industrial)
+	tick(&c, pick_first)
+	expect_building(t, c, 0, 0, .House)
+	expect_no_building(t, c, 2, 0)
+	expect_no_building(t, c, 1, 1)
+	tick(&c, pick_first)
+	expect_building(t, c, 2, 0, .Shop)
+	expect_no_building(t, c, 1, 1)
+	testing.expect_value(t, city_industrial_demand(c), 4)
+	tick(&c, pick_first)
+	expect_building(t, c, 1, 1, .Factory)
+	testing.expect_value(t, city_population(c), 4)
+	testing.expect_value(t, city_jobs(c), 8)
+	testing.expect_value(t, city_residential_demand(c), 12)
+	testing.expect_value(t, city_commercial_demand(c), 0)
+	testing.expect_value(t, city_industrial_demand(c), 0)
+}
+
+@(test)
 tick_grows_at_most_one_house :: proc(t: ^testing.T) {
 	c := city_new()
 	paint_road(&c, 1, 0)
@@ -238,6 +286,21 @@ tick_grows_at_most_one_house :: proc(t: ^testing.T) {
 	tick(&c, pick_first)
 	expect_building(t, c, 0, 0, .House)
 	expect_no_building(t, c, 2, 0)
+}
+
+@(test)
+tick_grows_at_most_one_factory :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 1, 1)
+	paint_zone(&c, 1, 0, .Residential)
+	paint_zone(&c, 0, 1, .Commercial)
+	paint_zone(&c, 2, 1, .Industrial)
+	paint_zone(&c, 1, 2, .Industrial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	expect_building(t, c, 2, 1, .Factory)
+	expect_no_building(t, c, 1, 2)
 }
 
 @(test)
@@ -382,6 +445,27 @@ save_then_load_round_trips_building_identity :: proc(t: ^testing.T) {
 	testing.expect(t, id_a != id_b)
 	expect_building(t, loaded, 0, 0, .House)
 	expect_building(t, loaded, 2, 0, .House)
+}
+
+@(test)
+save_then_load_keeps_industrial_and_factory :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 1, 0)
+	paint_zone(&c, 0, 0, .Residential)
+	paint_zone(&c, 2, 0, .Commercial)
+	paint_zone(&c, 1, 1, .Industrial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	path := "city_industrial.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_lot(loaded, 1, 1).zone, Zone.Industrial)
+	expect_building(t, loaded, 1, 1, .Factory)
+	testing.expect_value(t, city_jobs(loaded), 8)
+	testing.expect_value(t, city_industrial_demand(loaded), 0)
 }
 
 @(test)

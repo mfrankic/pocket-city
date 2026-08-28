@@ -16,6 +16,7 @@ Tool :: enum {
 	Road,
 	Residential,
 	Commercial,
+	Industrial,
 	Bulldoze,
 }
 
@@ -40,7 +41,8 @@ main :: proc() {
 		if rl.IsKeyPressed(.ONE) do tool = .Road
 		if rl.IsKeyPressed(.TWO) do tool = .Residential
 		if rl.IsKeyPressed(.THREE) do tool = .Commercial
-		if rl.IsKeyPressed(.FOUR) do tool = .Bulldoze
+		if rl.IsKeyPressed(.FOUR) do tool = .Industrial
+		if rl.IsKeyPressed(.FIVE) do tool = .Bulldoze
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
 		if rl.IsKeyPressed(.S) {
 			city.city_save(c, city.SAVE_PATH)
@@ -79,6 +81,8 @@ main :: proc() {
 				city.paint_zone(&c, lot_x, lot_y, .Residential)
 			case .Commercial:
 				city.paint_zone(&c, lot_x, lot_y, .Commercial)
+			case .Industrial:
+				city.paint_zone(&c, lot_x, lot_y, .Industrial)
 			case .Bulldoze:
 				city.bulldoze(&c, lot_x, lot_y)
 			}
@@ -127,6 +131,8 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 			return rl.GREEN
 		case .Shop:
 			return rl.BLUE
+		case .Factory:
+			return rl.Color{200, 160, 40, 255}
 		}
 	}
 	switch lot.zone {
@@ -134,6 +140,8 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 		return rl.Color{160, 210, 160, 255}
 	case .Commercial:
 		return rl.Color{150, 180, 230, 255}
+	case .Industrial:
+		return rl.Color{200, 190, 120, 255}
 	case .None:
 		switch lot.terrain {
 		case .Grass:
@@ -152,16 +160,17 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	line1 := fmt.ctprintf(
-		"$%d   pop %d   jobs %d   R %d   C %d",
+		"$%d   pop %d   jobs %d   R %d   C %d   I %d",
 		city.city_money(c),
 		city.city_population(c),
 		city.city_jobs(c),
 		city.city_residential_demand(c),
 		city.city_commercial_demand(c),
+		city.city_industrial_demand(c),
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s   %v    1-4 tools  space pause  S save  L load  wheel zoom  RMB pan",
+		"%s   %v    1-5 tools  space pause  S save  L load  wheel zoom  RMB pan",
 		run,
 		tool,
 	)

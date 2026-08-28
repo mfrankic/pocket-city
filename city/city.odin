@@ -10,6 +10,7 @@ ZONE_COST :: 5
 FOREST_COST :: 20
 HOUSE_POPULATION :: 4
 SHOP_JOBS :: 4
+FACTORY_JOBS :: 4
 TAX_PER_POP :: 1
 
 Lot_Kind :: enum {
@@ -28,11 +29,13 @@ Zone :: enum {
 	None,
 	Residential,
 	Commercial,
+	Industrial,
 }
 
 Building_Kind :: enum u8 {
 	House,
 	Shop,
+	Factory,
 }
 
 Building :: struct {
@@ -222,10 +225,26 @@ city_population :: proc(c: City) -> int {
 }
 
 city_jobs :: proc(c: City) -> int {
+	return shop_jobs(c) + factory_jobs(c)
+}
+
+@(private)
+shop_jobs :: proc(c: City) -> int {
 	n := 0
 	for b in c.buildings {
 		if b.present && b.kind == .Shop {
 			n += SHOP_JOBS
+		}
+	}
+	return n
+}
+
+@(private)
+factory_jobs :: proc(c: City) -> int {
+	n := 0
+	for b in c.buildings {
+		if b.present && b.kind == .Factory {
+			n += FACTORY_JOBS
 		}
 	}
 	return n
@@ -236,7 +255,11 @@ city_residential_demand :: proc(c: City) -> int {
 }
 
 city_commercial_demand :: proc(c: City) -> int {
-	return city_population(c) - city_jobs(c)
+	return city_population(c) - shop_jobs(c)
+}
+
+city_industrial_demand :: proc(c: City) -> int {
+	return shop_jobs(c) - factory_jobs(c)
 }
 
 Pick :: proc(n: int) -> int
@@ -244,11 +267,15 @@ Pick :: proc(n: int) -> int
 tick :: proc(c: ^City, pick: Pick) {
 	grow_houses := city_residential_demand(c^) > 0
 	grow_shops := city_commercial_demand(c^) > 0
+	grow_factories := city_industrial_demand(c^) > 0
 	if grow_houses {
 		grow(c, .Residential, .House, pick)
 	}
 	if grow_shops {
 		grow(c, .Commercial, .Shop, pick)
+	}
+	if grow_factories {
+		grow(c, .Industrial, .Factory, pick)
 	}
 	c.money += TAX_PER_POP * city_population(c^)
 }
@@ -358,7 +385,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	c.money = int(get_i64le(data[1:9]))
 	i := SAVE_HEADER
 	for b in 0 ..< count {
-		if data[i] > u8(Building_Kind.Shop) {
+		if data[i] > u8(Building_Kind.Factory) {
 			return {}, false
 		}
 		c.buildings[b] = Building {
@@ -370,7 +397,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	refs: [MAX_BUILDINGS]int
 	for &lot in c.lots {
 		if data[i] > u8(Lot_Kind.Road) ||
-		   data[i + 1] > u8(Zone.Commercial) ||
+		   data[i + 1] > u8(Zone.Industrial) ||
 		   data[i + 2] > u8(Terrain.Rock) {
 			return {}, false
 		}

@@ -97,13 +97,12 @@ main :: proc() {
 		rl.BeginMode2D(cam)
 		for y in 0 ..< city.MAP_SIZE {
 			for x in 0 ..< city.MAP_SIZE {
-				lot := city.city_lot(c, x, y)
 				rl.DrawRectangle(
 					i32(x * LOT_PX),
 					i32(y * LOT_PX),
 					LOT_PX,
 					LOT_PX,
-					lot_color(lot),
+					lot_color(c, x, y),
 				)
 			}
 		}
@@ -117,32 +116,34 @@ pick :: proc(n: int) -> int {
 	return rand.int_max(n)
 }
 
-lot_color :: proc(lot: city.Lot) -> rl.Color {
+lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
+	lot := city.city_lot(c, x, y)
 	if lot.kind == .Road {
 		return rl.GRAY
 	}
-	switch lot.building {
-	case .House:
-		return rl.GREEN
-	case .Shop:
-		return rl.BLUE
+	if kind, ok := city.building_kind_at(c, x, y); ok {
+		switch kind {
+		case .House:
+			return rl.GREEN
+		case .Shop:
+			return rl.BLUE
+		}
+	}
+	switch lot.zone {
+	case .Residential:
+		return rl.Color{160, 210, 160, 255}
+	case .Commercial:
+		return rl.Color{150, 180, 230, 255}
 	case .None:
-		switch lot.zone {
-		case .Residential:
-			return rl.Color{160, 210, 160, 255}
-		case .Commercial:
-			return rl.Color{150, 180, 230, 255}
-		case .None:
-			switch lot.terrain {
-			case .Grass:
-				return rl.Color{40, 90, 40, 255}
-			case .Lake:
-				return rl.Color{30, 90, 160, 255}
-			case .Forest:
-				return rl.Color{20, 70, 25, 255}
-			case .Rock:
-				return rl.Color{110, 105, 95, 255}
-			}
+		switch lot.terrain {
+		case .Grass:
+			return rl.Color{40, 90, 40, 255}
+		case .Lake:
+			return rl.Color{30, 90, 160, 255}
+		case .Forest:
+			return rl.Color{20, 70, 25, 255}
+		case .Rock:
+			return rl.Color{110, 105, 95, 255}
 		}
 	}
 	return rl.MAGENTA

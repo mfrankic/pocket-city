@@ -19,6 +19,9 @@ HEALTH_STRUGGLING :: 0.6
 HEALTH_NIBBLE :: 0.05
 HEALTH_REGEN :: 0.02
 TAX_HIGH :: 4
+POLLUTION_EMIT :: f32(1)
+POLLUTION_FALLOFF :: f32(0.5)
+POLLUTION_HIGH :: f32(0.2)
 
 Lot_Kind :: enum {
 	Plot,
@@ -74,6 +77,7 @@ City :: struct {
 	buildings: [MAX_BUILDINGS]Building,
 	powered:   [MAP_SIZE * MAP_SIZE]bool,
 	watered:   [MAP_SIZE * MAP_SIZE]bool,
+	pollution: [MAP_SIZE * MAP_SIZE]f32,
 }
 
 city_new :: proc() -> City {
@@ -324,6 +328,10 @@ lot_watered :: proc(c: City, x, y: int) -> bool {
 	return c.watered[y * MAP_SIZE + x]
 }
 
+lot_pollution :: proc(c: City, x, y: int) -> f32 {
+	return c.pollution[y * MAP_SIZE + x]
+}
+
 @(private)
 recompute_supply :: proc(c: ^City) {
 	c.powered = {}
@@ -407,6 +415,38 @@ flood_supply :: proc(c: ^City, id: u16, dest: ^[MAP_SIZE * MAP_SIZE]bool) {
 	}
 }
 
+@(private)
+recompute_pollution :: proc(c: ^City) {
+	// ponytail: closed-form cardinal spread+decay (Manhattan); a lingering field if demolish should leave smoke
+	c.pollution = {}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		id := c.lots[i].building_id
+		if id == 0 || id > MAX_BUILDINGS {
+			continue
+		}
+		b := c.buildings[id - 1]
+		if !b.present || b.kind != .Factory {
+			continue
+		}
+		fx, fy := i % MAP_SIZE, i / MAP_SIZE
+		for y in 0 ..< MAP_SIZE {
+			for x in 0 ..< MAP_SIZE {
+				d := abs(x - fx) + abs(y - fy)
+				c.pollution[y * MAP_SIZE + x] += pollution_from_distance(d)
+			}
+		}
+	}
+}
+
+@(private)
+pollution_from_distance :: proc(d: int) -> f32 {
+	amount := POLLUTION_EMIT
+	for _ in 0 ..< d {
+		amount *= POLLUTION_FALLOFF
+	}
+	return amount
+}
+
 // ponytail: per building, not plots; 09 multiplies by footprint when 2×2 births
 city_population :: proc(c: City) -> int {
 	n := 0
@@ -475,6 +515,7 @@ Pick :: proc(n: int) -> int
 
 tick :: proc(c: ^City, pick: Pick) {
 	recompute_supply(c)
+	recompute_pollution(c)
 	apply_health(c)
 	grow_houses := city_residential_demand(c^) > 0
 	grow_shops := city_commercial_demand(c^) > 0
@@ -512,6 +553,9 @@ apply_health :: proc(c: ^City) {
 		if unemployed && b.kind == .House {
 			delta -= HEALTH_NIBBLE
 		}
+		if b.kind == .House && building_pollution(c, u16(id)) > POLLUTION_HIGH {
+			delta -= HEALTH_NIBBLE
+		}
 		if c.tax >= TAX_HIGH {
 			delta -= HEALTH_NIBBLE
 		}
@@ -546,6 +590,17 @@ lots_supplied :: proc(c: ^City, id: u16, flags: ^[MAP_SIZE * MAP_SIZE]bool) -> b
 		}
 	}
 	return true
+}
+
+@(private)
+building_pollution :: proc(c: ^City, id: u16) -> f32 {
+	worst: f32
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == id && c.pollution[i] > worst {
+			worst = c.pollution[i]
+		}
+	}
+	return worst
 }
 
 @(private)
@@ -717,6 +772,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		}
 	}
 	recompute_supply(&c)
+	recompute_pollution(&c)
 	return c, true
 }
 

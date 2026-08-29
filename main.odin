@@ -31,6 +31,7 @@ Overlay :: enum {
 	None,
 	Power,
 	Water,
+	Pollution,
 }
 
 main :: proc() {
@@ -66,6 +67,7 @@ main :: proc() {
 		if rl.IsKeyPressed(.H) do tool = .Hospital
 		if rl.IsKeyPressed(.P) do overlay = .None if overlay == .Power else .Power
 		if rl.IsKeyPressed(.W) do overlay = .None if overlay == .Water else .Water
+		if rl.IsKeyPressed(.O) do overlay = .None if overlay == .Pollution else .Pollution
 		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
 		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
@@ -188,14 +190,19 @@ building_color :: proc(kind: city.Building_Kind) -> rl.Color {
 
 lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
-	if lot.kind != .Road {
-		switch overlay {
-		case .Power:
+	switch overlay {
+	case .Pollution:
+		p := clamp(city.lot_pollution(c, x, y), 0, 1)
+		return rl.Color{u8(40 + 170 * p), u8(35 + 50 * p), u8(20), 255}
+	case .Power:
+		if lot.kind != .Road {
 			return rl.GOLD if city.lot_powered(c, x, y) else rl.Color{20, 20, 20, 255}
-		case .Water:
-			return rl.SKYBLUE if city.lot_watered(c, x, y) else rl.Color{20, 20, 20, 255}
-		case .None:
 		}
+	case .Water:
+		if lot.kind != .Road {
+			return rl.SKYBLUE if city.lot_watered(c, x, y) else rl.Color{20, 20, 20, 255}
+		}
+	case .None:
 	}
 	if lot.kind == .Road {
 		return rl.GRAY
@@ -249,7 +256,7 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W overlay  [ ] tax  space  S/L",
+		"%s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O overlay  [ ] tax  space  S/L",
 		run,
 		tool,
 		overlay,

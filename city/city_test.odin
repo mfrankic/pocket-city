@@ -1360,3 +1360,211 @@ save_then_load_keeps_health :: proc(t: ^testing.T) {
 	testing.expect_value(t, lh, h)
 	testing.expect_value(t, city_happiness(loaded), city_happiness(c))
 }
+
+grow_house_shop_factory :: proc(c: ^City, house, shop, factory: [2]int) {
+	paint_zone(c, house[0], house[1], .Residential)
+	paint_zone(c, shop[0], shop[1], .Commercial)
+	paint_zone(c, factory[0], factory[1], .Industrial)
+	tick(c, pick_first)
+	tick(c, pick_first)
+	tick(c, pick_first)
+}
+
+@(test)
+factory_plot_emits_pollution :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	grow_house_shop_factory(&c, p[0], p[1], p[2])
+	tick(&c, pick_first)
+	fx, fy := p[2][0], p[2][1]
+	expect_building(t, c, fx, fy, .Factory)
+	testing.expect(t, lot_pollution(c, fx, fy) > 0)
+}
+
+cardinal_pair :: proc(plots: [][2]int) -> (a, b: [2]int, ok: bool) {
+	for i in 0 ..< len(plots) {
+		for j in i + 1 ..< len(plots) {
+			if abs(plots[i][0] - plots[j][0]) + abs(plots[i][1] - plots[j][1]) == 1 {
+				return plots[i], plots[j], true
+			}
+		}
+	}
+	return {}, {}, false
+}
+
+other_plot :: proc(plots: [][2]int, a, b: [2]int) -> (p: [2]int, ok: bool) {
+	for q in plots {
+		if q != a && q != b {
+			return q, true
+		}
+	}
+	return {}, false
+}
+
+@(test)
+pollution_spreads_to_cardinal_lots_and_decays :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	grow_house_shop_factory(&c, p[0], p[1], p[2])
+	tick(&c, pick_first)
+	fx, fy := p[2][0], p[2][1]
+	src := lot_pollution(c, fx, fy)
+	found := false
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := fx + n[0], fy + n[1]
+		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+			continue
+		}
+		mid := lot_pollution(c, nx, ny)
+		testing.expect(t, mid > 0)
+		testing.expect(t, mid < src)
+		n2x, n2y := fx + 2 * n[0], fy + 2 * n[1]
+		if n2x < 0 || n2y < 0 || n2x >= MAP_SIZE || n2y >= MAP_SIZE {
+			continue
+		}
+		testing.expect(t, lot_pollution(c, n2x, n2y) < mid)
+		found = true
+		break
+	}
+	testing.expect(t, found)
+}
+
+supplied_plot_touching_lake :: proc(c: City) -> (x, y, lx, ly: int, ok: bool) {
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			lot := city_lot(c, x, y)
+			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+				continue
+			}
+			if !lot_powered(c, x, y) || !lot_watered(c, x, y) || !plot_touches_road(c, x, y) {
+				continue
+			}
+			for n in cardinal {
+				nx, ny := x + n[0], y + n[1]
+				if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+					continue
+				}
+				if city_lot(c, nx, ny).terrain == .Lake {
+					return x, y, nx, ny, true
+				}
+			}
+		}
+	}
+	return 0, 0, 0, 0, false
+}
+
+@(test)
+roads_and_lakes_hold_pollution :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	fx, fy, lx, ly, lake_plot := supplied_plot_touching_lake(c)
+	testing.expect(t, lake_plot)
+	house, shop, picked := two_plots_besides(p[:8], {fx, fy})
+	testing.expect(t, picked)
+	grow_house_shop_factory(&c, house, shop, {fx, fy})
+	tick(&c, pick_first)
+	expect_building(t, c, fx, fy, .Factory)
+	testing.expect(t, lot_pollution(c, lx, ly) > 0)
+	rx, ry, road := find_cardinal_road(c, fx, fy)
+	testing.expect(t, road)
+	testing.expect(t, lot_pollution(c, rx, ry) > 0)
+	ox, oy := fx + (lx - fx) * 2, fy + (ly - fy) * 2
+	if ox >= 0 && oy >= 0 && ox < MAP_SIZE && oy < MAP_SIZE {
+		testing.expect(t, lot_pollution(c, ox, oy) > 0)
+	}
+}
+
+two_plots_besides :: proc(plots: [][2]int, skip: [2]int) -> (a, b: [2]int, ok: bool) {
+	n := 0
+	for q in plots {
+		if q == skip {
+			continue
+		}
+		if n == 0 {
+			a = q
+			n = 1
+		} else {
+			return a, q, true
+		}
+	}
+	return {}, {}, false
+}
+
+@(test)
+local_pollution_nibbles_houses_not_shops_or_factories :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	house, factory, pair := cardinal_pair(p[:8])
+	testing.expect(t, pair)
+	shop, shop_ok := other_plot(p[:8], house, factory)
+	testing.expect(t, shop_ok)
+	grow_house_shop_factory(&c, house, shop, factory)
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	hh, hok := building_health_at(c, house[0], house[1])
+	sh, sok := building_health_at(c, shop[0], shop[1])
+	fh, fok := building_health_at(c, factory[0], factory[1])
+	testing.expect(t, hok && sok && fok)
+	testing.expect(t, hh < 1)
+	testing.expect_value(t, sh, f32(1))
+	testing.expect_value(t, fh, f32(1))
+}
+
+@(test)
+pollution_does_not_nibble_a_park :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	house, factory, pair := cardinal_pair(p[:8])
+	testing.expect(t, pair)
+	shop, shop_ok := other_plot(p[:8], house, factory)
+	testing.expect(t, shop_ok)
+	park: [2]int
+	park_ok := false
+	for q in p[:8] {
+		if q != house && q != shop && q != factory {
+			park = q
+			park_ok = true
+			break
+		}
+	}
+	testing.expect(t, park_ok)
+	testing.expect(t, stamp(&c, park[0], park[1], .Park))
+	grow_house_shop_factory(&c, house, shop, factory)
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	ph, pok := building_health_at(c, park[0], park[1])
+	testing.expect(t, pok)
+	testing.expect_value(t, ph, f32(1))
+}
+
+@(test)
+save_then_load_keeps_pollution_belt :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	grow_house_shop_factory(&c, p[0], p[1], p[2])
+	tick(&c, pick_first)
+	fx, fy := p[2][0], p[2][1]
+	want := lot_pollution(c, fx, fy)
+	testing.expect(t, want > 0)
+	path := "city_pollution.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	testing.expect_value(t, lot_pollution(loaded, fx, fy), want)
+	rx, ry, road := find_cardinal_road(loaded, fx, fy)
+	testing.expect(t, road)
+	testing.expect_value(t, lot_pollution(loaded, rx, ry), lot_pollution(c, rx, ry))
+}

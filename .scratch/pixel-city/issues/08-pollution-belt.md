@@ -4,11 +4,11 @@
 
 **Blocked by:** 03: Industrial, factories, three demands; 07: Health, husks, happiness
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Factory plots emit pollution each tick; it spreads to cardinal neighbors and decays
-- [ ] Roads and lakes hold pollution (a one-lot moat does not hide smoke)
-- [ ] A house’s pollution nibble uses the worst plot in its footprint
-- [ ] Shops and factories are not nibbled by pollution
-- [ ] The player can toggle a pollution overlay
-- [ ] After load, the belt matches (stored or recomputed consistently)
+- [x] Factory plots emit pollution each tick; it spreads to cardinal neighbors and decays
+- [x] Roads and lakes hold pollution (a one-lot moat does not hide smoke)
+- [x] A house’s pollution nibble uses the worst plot in its footprint
+- [x] Shops and factories are not nibbled by pollution
+- [x] The player can toggle a pollution overlay
+- [x] After load, the belt matches (stored or recomputed consistently)

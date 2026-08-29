@@ -2336,3 +2336,161 @@ happiness_is_not_an_input_to_crime :: proc(t: ^testing.T) {
 	testing.expect(t, city_happiness(c) < hap)
 	testing.expect_value(t, lot_crime(c, shop[0], shop[1]), crime)
 }
+
+@(test)
+new_city_clock_is_year_one_month_one_day_one :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect_value(t, city_year(c), 1)
+	testing.expect_value(t, city_month(c), 1)
+	testing.expect_value(t, city_day(c), 1)
+}
+
+@(test)
+clock_month_advances_after_a_month_of_ticks :: proc(t: ^testing.T) {
+	c := city_new()
+	for _ in 0 ..< MONTH_TICKS {
+		tick(&c, pick_first)
+	}
+	testing.expect_value(t, city_year(c), 1)
+	testing.expect_value(t, city_month(c), 2)
+	testing.expect_value(t, city_day(c), 1)
+}
+
+@(test)
+hour_advances_inside_a_month_and_is_not_a_rule :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect_value(t, city_hour(c), 0)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_month(c), 1)
+	testing.expect_value(t, city_day(c), 2)
+	testing.expect_value(t, city_hour(c), 1)
+}
+
+@(test)
+income_arrives_every_tick_inside_a_month :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_population(c), 4)
+	money := city_money(c)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_month(c), 1)
+	testing.expect_value(t, city_day(c), 3)
+	testing.expect_value(t, city_money(c), money + 4)
+}
+
+@(test)
+graph_samples_once_per_month :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect_value(t, city_graph_len(c), 0)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_graph_len(c), 1)
+	for _ in 1 ..< MONTH_TICKS {
+		tick(&c, pick_first)
+	}
+	testing.expect_value(t, city_graph_len(c), 1)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_graph_len(c), 2)
+}
+
+@(test)
+graph_records_population_jobs_money_and_happiness :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	s0 := city_graph_at(c, 0)
+	testing.expect_value(t, s0.population, 0)
+	testing.expect_value(t, s0.jobs, 0)
+	tick(&c, pick_first)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_building(t, c, p[1][0], p[1][1], .Shop)
+	money := city_money(c)
+	for _ in 2 ..< MONTH_TICKS {
+		tick(&c, pick_first)
+	}
+	testing.expect_value(t, city_graph_len(c), 1)
+	tick(&c, pick_first)
+	s1 := city_graph_at(c, 1)
+	testing.expect_value(t, s1.population, 4)
+	testing.expect_value(t, s1.jobs, 4)
+	testing.expect_value(t, s1.money, money + (MONTH_TICKS - 2) * 4)
+	testing.expect_value(t, s1.happiness, f32(1))
+}
+
+pick_outage :: proc(n: int) -> int {
+	if n == OUTAGE_CHANCE {
+		return n - 1
+	}
+	return 0
+}
+
+@(test)
+outage_month_stations_supply_no_power :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect(t, lot_powered(c, 0, 1))
+	tick(&c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect(t, !lot_powered(c, 0, 1))
+	testing.expect(t, !lot_powered(c, 1, 0))
+}
+
+@(test)
+outage_dries_taps_when_towers_lose_power :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	x, y := p[0][0], p[0][1]
+	testing.expect(t, lot_powered(c, x, y))
+	testing.expect(t, lot_watered(c, x, y))
+	tick(&c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect(t, !lot_powered(c, x, y))
+	testing.expect(t, !lot_watered(c, x, y))
+}
+
+@(test)
+stations_supply_again_after_outage_month_without_restamp :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	tick(&c, pick_outage)
+	testing.expect(t, !lot_powered(c, 0, 1))
+	for _ in 1 ..< MONTH_TICKS {
+		tick(&c, pick_first)
+		testing.expect(t, city_outage(c))
+		testing.expect(t, !lot_powered(c, 0, 1))
+	}
+	tick(&c, pick_first)
+	testing.expect(t, !city_outage(c))
+	testing.expect(t, lot_powered(c, 0, 1))
+	expect_building(t, c, 1, 0, .Station)
+}
+
+@(test)
+save_then_load_keeps_ticks_and_outage :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	tick(&c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect_value(t, city_day(c), 2)
+	testing.expect(t, !lot_powered(c, 0, 1))
+	path := "city_month.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect(t, city_outage(loaded))
+	testing.expect_value(t, city_year(loaded), city_year(c))
+	testing.expect_value(t, city_month(loaded), city_month(c))
+	testing.expect_value(t, city_day(loaded), city_day(c))
+	testing.expect(t, !lot_powered(loaded, 0, 1))
+	expect_building(t, loaded, 1, 0, .Station)
+}

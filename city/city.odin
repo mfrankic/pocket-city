@@ -27,6 +27,11 @@ CRIME_UNEMPLOYED :: f32(1)
 CRIME_HIGH :: f32(2)
 COVERAGE_RANGE :: 4
 LAND_VALUE_HIGH :: f32(2.5)
+MONTH_TICKS :: 16
+MONTHS_PER_YEAR :: 12
+HOURS_PER_DAY :: 24
+GRAPH_MONTHS :: 24
+OUTAGE_CHANCE :: 8
 
 Lot_Kind :: enum {
 	Plot,
@@ -67,6 +72,13 @@ Building :: struct {
 	level:   u8,
 }
 
+Graph_Point :: struct {
+	population: int,
+	jobs:       int,
+	money:      int,
+	happiness:  f32,
+}
+
 Lot :: struct {
 	kind:        Lot_Kind,
 	zone:        Zone,
@@ -80,6 +92,10 @@ City :: struct {
 	lots:      [MAP_SIZE * MAP_SIZE]Lot,
 	money:     int,
 	tax:       int,
+	ticks:     int,
+	graph:     [GRAPH_MONTHS]Graph_Point,
+	graph_len: int,
+	outage:    bool,
 	buildings: [MAX_BUILDINGS]Building,
 	powered:   [MAP_SIZE * MAP_SIZE]bool,
 	watered:   [MAP_SIZE * MAP_SIZE]bool,
@@ -329,6 +345,34 @@ city_tax :: proc(c: City) -> int {
 	return c.tax
 }
 
+city_year :: proc(c: City) -> int {
+	return c.ticks / (MONTH_TICKS * MONTHS_PER_YEAR) + 1
+}
+
+city_month :: proc(c: City) -> int {
+	return c.ticks / MONTH_TICKS % MONTHS_PER_YEAR + 1
+}
+
+city_day :: proc(c: City) -> int {
+	return c.ticks % MONTH_TICKS + 1
+}
+
+city_hour :: proc(c: City) -> int {
+	return c.ticks * HOURS_PER_DAY / MONTH_TICKS % HOURS_PER_DAY
+}
+
+city_graph_len :: proc(c: City) -> int {
+	return c.graph_len
+}
+
+city_graph_at :: proc(c: City, i: int) -> Graph_Point {
+	return c.graph[i]
+}
+
+city_outage :: proc(c: City) -> bool {
+	return c.outage
+}
+
 city_set_tax :: proc(c: ^City, tax: int) {
 	c.tax = max(tax, 0)
 }
@@ -419,7 +463,7 @@ recompute_supply :: proc(c: ^City) {
 	c.watered = {}
 	for id in 1 ..= MAX_BUILDINGS {
 		b := c.buildings[id - 1]
-		if b.present && b.kind == .Station {
+		if b.present && b.kind == .Station && !c.outage {
 			flood_supply(c, u16(id), &c.powered)
 		}
 	}
@@ -711,6 +755,11 @@ city_industrial_demand :: proc(c: City) -> int {
 Pick :: proc(n: int) -> int
 
 tick :: proc(c: ^City, pick: Pick) {
+	if c.ticks % MONTH_TICKS == 0 {
+		sample_graph(c)
+		c.outage = pick(OUTAGE_CHANCE) == OUTAGE_CHANCE - 1
+	}
+	c.ticks += 1
 	recompute_supply(c)
 	recompute_pollution(c)
 	apply_health(c)
@@ -736,6 +785,21 @@ tick :: proc(c: ^City, pick: Pick) {
 		level_up(c, .Factory, pick)
 	}
 	c.money += c.tax * city_population(c^)
+}
+
+@(private)
+sample_graph :: proc(c: ^City) {
+	if c.graph_len == GRAPH_MONTHS {
+		copy(c.graph[:GRAPH_MONTHS - 1], c.graph[1:])
+		c.graph_len -= 1
+	}
+	c.graph[c.graph_len] = Graph_Point {
+		population = city_population(c^),
+		jobs       = city_jobs(c^),
+		money      = city_money(c^),
+		happiness  = city_happiness(c^),
+	}
+	c.graph_len += 1
 }
 
 @(private)
@@ -1050,8 +1114,8 @@ has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(6)
-SAVE_HEADER :: 1 + 8 + 8 + 2
+SAVE_VERSION :: u8(7)
+SAVE_HEADER :: 1 + 8 + 8 + 8 + 1 + 2
 LOT_BYTES :: 5
 BUILDING_BYTES :: 6
 SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES
@@ -1061,6 +1125,8 @@ city_save :: proc(c: City, path: string) -> bool {
 	buf[0] = SAVE_VERSION
 	put_i64le(buf[1:9], i64(c.money))
 	put_i64le(buf[9:17], i64(c.tax))
+	put_i64le(buf[17:25], i64(c.ticks))
+	buf[25] = 1 if c.outage else 0
 	remap: [MAX_BUILDINGS + 1]u16
 	n: u16
 	i := SAVE_HEADER
@@ -1076,7 +1142,7 @@ city_save :: proc(c: City, path: string) -> bool {
 		buf[i + 5] = b.level
 		i += BUILDING_BYTES
 	}
-	put_u16le(buf[17:19], n)
+	put_u16le(buf[26:28], n)
 	for lot in c.lots {
 		buf[i + 0] = u8(lot.kind)
 		buf[i + 1] = u8(lot.zone)
@@ -1096,15 +1162,24 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	if len(data) < SAVE_HEADER || data[0] != SAVE_VERSION {
 		return {}, false
 	}
-	count := int(get_u16le(data[17:19]))
+	count := int(get_u16le(data[26:28]))
 	if count > MAX_BUILDINGS {
 		return {}, false
 	}
 	if len(data) != SAVE_HEADER + count * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES {
 		return {}, false
 	}
+	ticks := get_i64le(data[17:25])
+	if ticks < 0 {
+		return {}, false
+	}
+	if data[25] > 1 {
+		return {}, false
+	}
 	c.money = int(get_i64le(data[1:9]))
 	c.tax = int(get_i64le(data[9:17]))
+	c.ticks = int(ticks)
+	c.outage = data[25] == 1
 	i := SAVE_HEADER
 	for b in 0 ..< count {
 		if data[i] >= u8(len(Building_Kind)) {

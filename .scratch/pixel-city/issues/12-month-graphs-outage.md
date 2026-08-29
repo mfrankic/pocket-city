@@ -4,11 +4,11 @@
 
 **Blocked by:** 06: Power and water; 07: Health, husks, happiness
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] A month is N ticks; income and health still change every tick
-- [ ] HUD shows year/month/day (or equivalent) derived from ticks; hour does not change the sim
-- [ ] Graphs show at least population, jobs, money, and happiness by month
-- [ ] Each month, a small chance of an outage: Stations supply 0 power for that month; taps fail if Towers lose power
-- [ ] After the outage month, Stations supply again without the player restamping
-- [ ] Save/load keeps tick/month and whether this month is an outage
+- [x] A month is N ticks; income and health still change every tick
+- [x] HUD shows year/month/day (or equivalent) derived from ticks; hour does not change the sim
+- [x] Graphs show at least population, jobs, money, and happiness by month
+- [x] Each month, a small chance of an outage: Stations supply 0 power for that month; taps fail if Towers lose power
+- [x] After the outage month, Stations supply again without the player restamping
+- [x] Save/load keeps tick/month and whether this month is an outage

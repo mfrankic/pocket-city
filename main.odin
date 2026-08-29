@@ -7,10 +7,12 @@ import city "./city"
 import rl "vendor:raylib"
 
 LOT_PX :: 16
-HUD_H :: 64
+HUD_H :: 80
 WIN_W :: 960
 WIN_H :: 640
 TICK_DT :: 0.25
+GRAPH_X :: 740
+GRAPH_W :: 208
 
 Tool :: enum {
 	Road,
@@ -266,8 +268,9 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 
 draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
+	outage := "  OUTAGE" if city.city_outage(c) else ""
 	line1 := fmt.ctprintf(
-		"$%d   pop %d   jobs %d   R %d   C %d   I %d   tax %d   hap %d",
+		"$%d  pop %d  jobs %d  R %d  C %d  I %d  tax %d  hap %d",
 		city.city_money(c),
 		city.city_population(c),
 		city.city_jobs(c),
@@ -279,11 +282,101 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C overlay  [ ] tax  space  S/L",
+		"%d/%d/%d %02dh%s  %s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C  [ ] tax  space  S/L",
+		city.city_year(c),
+		city.city_month(c),
+		city.city_day(c),
+		city.city_hour(c),
+		outage,
 		run,
 		tool,
 		overlay,
 	)
-	rl.DrawText(line1, 8, 8, 18, rl.WHITE)
-	rl.DrawText(line2, 8, 36, 16, rl.LIGHTGRAY)
+	rl.DrawText(line1, 8, 8, 16, rl.WHITE)
+	rl.DrawText(line2, 8, 32, 14, rl.LIGHTGRAY)
+	draw_graphs(c)
+}
+
+Hud_Graph :: enum {
+	Population,
+	Jobs,
+	Money,
+	Happiness,
+}
+
+graph_value :: proc(p: city.Graph_Point, g: Hud_Graph) -> f32 {
+	switch g {
+	case .Population:
+		return f32(p.population)
+	case .Jobs:
+		return f32(p.jobs)
+	case .Money:
+		return f32(p.money)
+	case .Happiness:
+		return p.happiness
+	}
+	return 0
+}
+
+graph_label :: proc(g: Hud_Graph) -> cstring {
+	switch g {
+	case .Population:
+		return "P"
+	case .Jobs:
+		return "J"
+	case .Money:
+		return "$"
+	case .Happiness:
+		return "H"
+	}
+	return "?"
+}
+
+graph_color :: proc(g: Hud_Graph) -> rl.Color {
+	switch g {
+	case .Population:
+		return rl.GREEN
+	case .Jobs:
+		return rl.SKYBLUE
+	case .Money:
+		return rl.GOLD
+	case .Happiness:
+		return rl.PINK
+	}
+	return rl.WHITE
+}
+
+draw_graphs :: proc(c: city.City) {
+	n := city.city_graph_len(c)
+	row_h: i32 = 16
+	for g in Hud_Graph {
+		row := i32(g)
+		y := 8 + row * row_h
+		rl.DrawText(graph_label(g), GRAPH_X, y, 10, graph_color(g))
+		if n == 0 {
+			continue
+		}
+		hi: f32 = 1
+		for i in 0 ..< n {
+			hi = max(hi, graph_value(city.city_graph_at(c, i), g))
+		}
+		x0: i32 = GRAPH_X + 12
+		w: i32 = GRAPH_W - 16
+		h: i32 = row_h - 4
+		col := graph_color(g)
+		if n == 1 {
+			p := graph_value(city.city_graph_at(c, 0), g) / hi
+			rl.DrawPixel(x0, y + h - i32(p * f32(h)), col)
+			continue
+		}
+		for i in 1 ..< n {
+			a := graph_value(city.city_graph_at(c, i - 1), g) / hi
+			b := graph_value(city.city_graph_at(c, i), g) / hi
+			x1 := x0 + i32(f32(w) * f32(i - 1) / f32(n - 1))
+			x2 := x0 + i32(f32(w) * f32(i) / f32(n - 1))
+			y1 := y + h - i32(a * f32(h))
+			y2 := y + h - i32(b * f32(h))
+			rl.DrawLine(x1, y1, x2, y2, col)
+		}
+	}
 }

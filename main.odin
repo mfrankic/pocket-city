@@ -160,14 +160,12 @@ main :: proc() {
 		rl.BeginMode2D(cam)
 		for y in 0 ..< city.MAP_SIZE {
 			for x in 0 ..< city.MAP_SIZE {
-				rl.DrawRectangle(
-					i32(x * LOT_PX),
-					i32(y * LOT_PX),
-					LOT_PX,
-					LOT_PX,
-					lot_color(c, x, y, overlay),
-				)
+				col := ground_color(c, x, y) if overlay == .None else lot_color(c, x, y, overlay)
+				rl.DrawRectangle(i32(x * LOT_PX), i32(y * LOT_PX), LOT_PX, LOT_PX, col)
 			}
+		}
+		if overlay == .None {
+			draw_stamps(c)
 		}
 		rl.EndMode2D()
 		draw_hud(c, paused, speed, tool, overlay, hover_x, hover_y, hover_ok)
@@ -219,6 +217,170 @@ building_color :: proc(kind: city.Building_Kind) -> rl.Color {
 	return rl.MAGENTA
 }
 
+// 16×16 templates, bit 15 is the left pixel. Scaled to the occupancy rectangle.
+STAMP :: [city.Building_Kind][16]u16 {
+	.House = {
+		0x03C0, 0x07E0, 0x0FF0, 0x1FF8,
+		0x3FFC, 0x7FFE, 0xFFFF, 0xE7E7,
+		0xE3C7, 0xE187, 0xE007, 0xE7E7,
+		0xE7E7, 0xE7E7, 0xE007, 0xFFFF,
+	},
+	.Shop = {
+		0x1FF8, 0x2AAC, 0x5556, 0xFFFF,
+		0xC003, 0xCFF3, 0xCFF3, 0xCC33,
+		0xCC33, 0xCFF3, 0xC003, 0xC003,
+		0xCFF3, 0xCFF3, 0xC003, 0xFFFF,
+	},
+	.Factory = {
+		0x1818, 0x1818, 0x1818, 0x1818,
+		0x6666, 0xFFFF, 0xFFFF, 0xC303,
+		0xC303, 0xFFFF, 0xC003, 0xCFF3,
+		0xCFF3, 0xC003, 0xFFFF, 0xFFFF,
+	},
+	.Station = {
+		0x0180, 0x03C0, 0x0180, 0x07E0,
+		0x3FFC, 0x7FFE, 0xF3CF, 0xF3CF,
+		0xFFFF, 0xF00F, 0xF7EF, 0xF7EF,
+		0xF00F, 0xFFFF, 0x300C, 0x300C,
+	},
+	.Tower = {
+		0x07E0, 0x07E0, 0x03C0, 0x0180,
+		0x0180, 0x07E0, 0x07E0, 0x0180,
+		0x0180, 0x07E0, 0x0FF0, 0x1FF8,
+		0x3FFC, 0x7FFE, 0x07E0, 0x0FF0,
+	},
+	.Park = {
+		0x03C0, 0x07E0, 0x0FF0, 0x1FF8,
+		0x0FF0, 0x1FF8, 0x3FFC, 0x1FF8,
+		0x0FF0, 0x0180, 0x0180, 0x0180,
+		0x0180, 0x07E0, 0x0FF0, 0x3FFC,
+	},
+	.School = {
+		0x0800, 0x0F00, 0x0F00, 0x0800,
+		0x0800, 0x3FFC, 0x7FFE, 0x63C6,
+		0x63C6, 0x7FFE, 0x6006, 0x67E6,
+		0x67E6, 0x6006, 0x7FFE, 0xFFFF,
+	},
+	.Police = {
+		0x0180, 0x03C0, 0x07E0, 0x0DB0,
+		0x07E0, 0x03C0, 0x3FFC, 0x7FFE,
+		0x6006, 0x67E6, 0x6006, 0x7FFE,
+		0x63C6, 0x63C6, 0x7FFE, 0xFFFF,
+	},
+	.Firehouse = {
+		0x1818, 0x1818, 0xFFFF, 0xFFFF,
+		0xC003, 0xDFFB, 0xD00B, 0xD7EB,
+		0xD00B, 0xDFFB, 0xC003, 0xFFFF,
+		0xCC33, 0xCC33, 0xCC33, 0xFFFF,
+	},
+	.Hospital = {
+		0x03C0, 0x03C0, 0x03C0, 0x3FFC,
+		0x3FFC, 0x3FFC, 0x03C0, 0x03C0,
+		0x3FFC, 0x7FFE, 0x6006, 0x67E6,
+		0x67E6, 0x6006, 0x7FFE, 0xFFFF,
+	},
+}
+
+CONSTRUCTION_STAMP :: [16]u16 {
+	0xFFFF, 0xC003, 0xA005, 0x9009,
+	0x8811, 0x8421, 0x8241, 0x8181,
+	0x8181, 0x8241, 0x8421, 0x8811,
+	0x9009, 0xA005, 0xC003, 0xFFFF,
+}
+
+stamp_footprint :: proc(c: city.City, x, y: int) -> (size: int, ok: bool) {
+	id := city.city_lot(c, x, y).building_id
+	if id == 0 {
+		return 0, false
+	}
+	if x > 0 && city.city_lot(c, x - 1, y).building_id == id {
+		return 0, false
+	}
+	if y > 0 && city.city_lot(c, x, y - 1).building_id == id {
+		return 0, false
+	}
+	size = 1
+	if x + 1 < city.MAP_SIZE && y + 1 < city.MAP_SIZE {
+		if city.city_lot(c, x + 1, y).building_id == id && city.city_lot(c, x, y + 1).building_id == id {
+			size = 2
+		}
+	}
+	return size, true
+}
+
+draw_stamp :: proc(ox, oy, scale: i32, mask: [16]u16, col: rl.Color) {
+	for row in 0 ..< 16 {
+		bits := mask[row]
+		for px in 0 ..< 16 {
+			if bits & (u16(0x8000) >> u16(px)) != 0 {
+				rl.DrawRectangle(ox + i32(px) * scale, oy + i32(row) * scale, scale, scale, col)
+			}
+		}
+	}
+}
+
+stamp_color :: proc(c: city.City, x, y: int, kind: city.Building_Kind) -> (mask: [16]u16, col: rl.Color) {
+	stamps := STAMP
+	col = building_color(kind)
+	mask = stamps[kind]
+	if rem, rok := city.building_construction_remaining_at(c, x, y); rok && rem > 0 {
+		return CONSTRUCTION_STAMP, rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
+	}
+	if h, hok := city.building_health_at(c, x, y); hok {
+		if h <= city.HEALTH_ABANDONED {
+			return mask, rl.Color{90, 85, 80, 255}
+		}
+		if h < city.HEALTH_STRUGGLING {
+			return mask, rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}
+		}
+	}
+	return mask, col
+}
+
+draw_stamps :: proc(c: city.City) {
+	for y in 0 ..< city.MAP_SIZE {
+		for x in 0 ..< city.MAP_SIZE {
+			size, origin := stamp_footprint(c, x, y)
+			if !origin {
+				continue
+			}
+			kind, kok := city.building_kind_at(c, x, y)
+			if !kok {
+				continue
+			}
+			mask, col := stamp_color(c, x, y, kind)
+			draw_stamp(i32(x * LOT_PX), i32(y * LOT_PX), i32(size), mask, col)
+		}
+	}
+}
+
+ground_color :: proc(c: city.City, x, y: int) -> rl.Color {
+	lot := city.city_lot(c, x, y)
+	if lot.kind == .Road {
+		return rl.GRAY
+	}
+	switch lot.zone {
+	case .Residential:
+		return rl.Color{160, 210, 160, 255}
+	case .Commercial:
+		return rl.Color{150, 180, 230, 255}
+	case .Industrial:
+		return rl.Color{200, 190, 120, 255}
+	case .None:
+		switch lot.terrain {
+		case .Grass:
+			return rl.Color{40, 90, 40, 255}
+		case .Lake:
+			return rl.Color{30, 90, 160, 255}
+		case .Forest:
+			return rl.Color{20, 70, 25, 255}
+		case .Rock:
+			return rl.Color{110, 105, 95, 255}
+		}
+	}
+	return rl.MAGENTA
+}
+
 lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
 	switch overlay {
@@ -253,44 +415,11 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 		}
 	case .None:
 	}
-	if lot.kind == .Road {
-		return rl.GRAY
-	}
 	if kind, ok := city.building_kind_at(c, x, y); ok {
-		col := building_color(kind)
-		if rem, rok := city.building_construction_remaining_at(c, x, y); rok && rem > 0 {
-			return rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
-		}
-		if h, ok := city.building_health_at(c, x, y); ok {
-			if h <= city.HEALTH_ABANDONED {
-				return rl.Color{90, 85, 80, 255}
-			}
-			if h < city.HEALTH_STRUGGLING {
-				return rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}
-			}
-		}
+		_, col := stamp_color(c, x, y, kind)
 		return col
 	}
-	switch lot.zone {
-	case .Residential:
-		return rl.Color{160, 210, 160, 255}
-	case .Commercial:
-		return rl.Color{150, 180, 230, 255}
-	case .Industrial:
-		return rl.Color{200, 190, 120, 255}
-	case .None:
-		switch lot.terrain {
-		case .Grass:
-			return rl.Color{40, 90, 40, 255}
-		case .Lake:
-			return rl.Color{30, 90, 160, 255}
-		case .Forest:
-			return rl.Color{20, 70, 25, 255}
-		case .Rock:
-			return rl.Color{110, 105, 95, 255}
-		}
-	}
-	return rl.MAGENTA
+	return ground_color(c, x, y)
 }
 
 draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {

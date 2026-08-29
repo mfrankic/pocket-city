@@ -160,6 +160,32 @@ pick :: proc(n: int) -> int {
 	return rand.int_max(n)
 }
 
+building_color :: proc(kind: city.Building_Kind) -> rl.Color {
+	switch kind {
+	case .House:
+		return rl.GREEN
+	case .Shop:
+		return rl.BLUE
+	case .Factory:
+		return rl.Color{200, 160, 40, 255}
+	case .Station:
+		return rl.Color{220, 200, 80, 255}
+	case .Tower:
+		return rl.Color{70, 130, 200, 255}
+	case .Park:
+		return rl.Color{80, 170, 70, 255}
+	case .School:
+		return rl.Color{180, 140, 60, 255}
+	case .Police:
+		return rl.Color{60, 80, 180, 255}
+	case .Firehouse:
+		return rl.Color{200, 70, 50, 255}
+	case .Hospital:
+		return rl.WHITE
+	}
+	return rl.MAGENTA
+}
+
 lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
 	if lot.kind != .Road {
@@ -175,28 +201,16 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 		return rl.GRAY
 	}
 	if kind, ok := city.building_kind_at(c, x, y); ok {
-		switch kind {
-		case .House:
-			return rl.GREEN
-		case .Shop:
-			return rl.BLUE
-		case .Factory:
-			return rl.Color{200, 160, 40, 255}
-		case .Station:
-			return rl.Color{220, 200, 80, 255}
-		case .Tower:
-			return rl.Color{70, 130, 200, 255}
-		case .Park:
-			return rl.Color{80, 170, 70, 255}
-		case .School:
-			return rl.Color{180, 140, 60, 255}
-		case .Police:
-			return rl.Color{60, 80, 180, 255}
-		case .Firehouse:
-			return rl.Color{200, 70, 50, 255}
-		case .Hospital:
-			return rl.WHITE
+		col := building_color(kind)
+		if h, ok := city.building_health_at(c, x, y); ok {
+			if h <= city.HEALTH_ABANDONED {
+				return rl.Color{90, 85, 80, 255}
+			}
+			if h < city.HEALTH_STRUGGLING {
+				return rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}
+			}
 		}
+		return col
 	}
 	switch lot.zone {
 	case .Residential:
@@ -223,7 +237,7 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	line1 := fmt.ctprintf(
-		"$%d   pop %d   jobs %d   R %d   C %d   I %d   tax %d",
+		"$%d   pop %d   jobs %d   R %d   C %d   I %d   tax %d   hap %d",
 		city.city_money(c),
 		city.city_population(c),
 		city.city_jobs(c),
@@ -231,6 +245,7 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 		city.city_commercial_demand(c),
 		city.city_industrial_demand(c),
 		city.city_tax(c),
+		int(city.city_happiness(c) * 100),
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(

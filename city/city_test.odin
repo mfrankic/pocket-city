@@ -13,6 +13,7 @@ new_city_has_starting_stats :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_residential_demand(c), 8)
 	testing.expect_value(t, city_commercial_demand(c), 0)
 	testing.expect_value(t, city_industrial_demand(c), 0)
+	testing.expect_value(t, city_happiness(c), f32(1))
 }
 
 @(test)
@@ -1080,4 +1081,282 @@ house_does_not_grow_without_water :: proc(t: ^testing.T) {
 	paint_zone(&c, 0, 1, .Residential)
 	tick(&c, pick_first)
 	expect_no_building(t, c, 0, 1)
+}
+
+@(test)
+new_house_has_full_health :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	tick(&c, pick_first)
+	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	testing.expect_value(t, h, f32(1))
+	testing.expect_value(t, city_happiness(c), f32(1))
+}
+
+find_building :: proc(c: City, kind: Building_Kind) -> (x, y: int, ok: bool) {
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			got, found := building_kind_at(c, x, y)
+			if found && got == kind {
+				return x, y, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+@(test)
+missing_power_abandons_a_house_into_a_husk :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	sx, sy, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, sx, sy))
+	abandoned := false
+	for _ in 0 ..< 80 {
+		tick(&c, pick_first)
+		h, health_ok := building_health_at(c, p[0][0], p[0][1])
+		testing.expect(t, health_ok)
+		if h <= HEALTH_ABANDONED {
+			testing.expect(t, h > 0)
+			testing.expect_value(t, city_population(c), 0)
+			lot := city_lot(c, p[0][0], p[0][1])
+			testing.expect_value(t, lot.zone, Zone.Residential)
+			testing.expect(t, lot.building_id != 0)
+			expect_building(t, c, p[0][0], p[0][1], .House)
+			abandoned = true
+			break
+		}
+	}
+	testing.expect(t, abandoned)
+}
+
+@(test)
+struggling_house_still_counts_population :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	sx, sy, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, sx, sy))
+	struggling := false
+	for _ in 0 ..< 80 {
+		tick(&c, pick_first)
+		h, health_ok := building_health_at(c, p[0][0], p[0][1])
+		testing.expect(t, health_ok)
+		if h < HEALTH_STRUGGLING && h > HEALTH_ABANDONED {
+			testing.expect_value(t, city_population(c), 4)
+			testing.expect_value(t, city_jobs(c), 4)
+			struggling = true
+			break
+		}
+	}
+	testing.expect(t, struggling)
+}
+
+@(test)
+unemployment_nibbles_houses_not_shops :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
+	paint_zone(&c, p[2][0], p[2][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_population(c), 8)
+	testing.expect_value(t, city_jobs(c), 4)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	hh, hok := building_health_at(c, p[0][0], p[0][1])
+	sh, sok := building_health_at(c, p[2][0], p[2][1])
+	testing.expect(t, hok && sok)
+	testing.expect(t, hh < 1)
+	testing.expect_value(t, sh, f32(1))
+}
+
+@(test)
+high_tax_nibbles_health :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	testing.expect_value(t, h, f32(1))
+	city_set_tax(&c, TAX_HIGH)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	h, health_ok = building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	testing.expect(t, h < 1)
+}
+
+@(test)
+unemployment_does_not_nibble_a_park :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	testing.expect(t, stamp(&c, p[1][0], p[1][1], .Park))
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	hh, hok := building_health_at(c, p[0][0], p[0][1])
+	ph, pok := building_health_at(c, p[1][0], p[1][1])
+	testing.expect(t, hok && pok)
+	testing.expect(t, hh < 1)
+	testing.expect_value(t, ph, f32(1))
+}
+
+@(test)
+husk_recovers_when_power_returns :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	sx, sy, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, sx, sy))
+	for _ in 0 ..< 80 {
+		tick(&c, pick_first)
+		h, health_ok := building_health_at(c, p[0][0], p[0][1])
+		testing.expect(t, health_ok)
+		if h <= HEALTH_ABANDONED {
+			break
+		}
+	}
+	testing.expect(t, stamp(&c, sx, sy, .Station))
+	recovered := false
+	for _ in 0 ..< 80 {
+		tick(&c, pick_first)
+		h, health_ok := building_health_at(c, p[0][0], p[0][1])
+		testing.expect(t, health_ok)
+		if h > HEALTH_ABANDONED {
+			testing.expect_value(t, city_population(c), 4)
+			recovered = true
+			break
+		}
+	}
+	testing.expect(t, recovered)
+}
+
+@(test)
+new_growth_skips_husk_plots :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
+	tick(&c, pick_first)
+	sx, sy, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, sx, sy))
+	for _ in 0 ..< 80 {
+		tick(&c, pick_first)
+		h, health_ok := building_health_at(c, p[0][0], p[0][1])
+		testing.expect(t, health_ok)
+		if h <= HEALTH_ABANDONED {
+			break
+		}
+	}
+	husk_id := city_lot(c, p[0][0], p[0][1]).building_id
+	testing.expect(t, husk_id != 0)
+	expect_no_building(t, c, p[1][0], p[1][1])
+	testing.expect(t, stamp(&c, sx, sy, .Station))
+	tick(&c, pick_first)
+	testing.expect_value(t, city_lot(c, p[0][0], p[0][1]).building_id, husk_id)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_building(t, c, p[1][0], p[1][1], .House)
+}
+
+@(test)
+missing_water_nibbles_grown_buildings :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tx, ty, found := find_building(c, .Tower)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, tx, ty))
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	testing.expect(t, h < 1)
+}
+
+@(test)
+happiness_falls_when_buildings_lose_health :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
+	paint_zone(&c, p[2][0], p[2][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	hap := city_happiness(c)
+	testing.expect(t, hap < 1)
+	testing.expect(t, hap > h)
+}
+
+@(test)
+save_then_load_keeps_health :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
+	paint_zone(&c, p[2][0], p[2][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	testing.expect(t, health_ok)
+	testing.expect(t, h < 1)
+	path := "city_health.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	lh, lok := building_health_at(loaded, p[0][0], p[0][1])
+	testing.expect(t, lok)
+	testing.expect_value(t, lh, h)
+	testing.expect_value(t, city_happiness(loaded), city_happiness(c))
 }

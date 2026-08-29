@@ -14,6 +14,11 @@ FACTORY_JOBS :: 4
 TAX_DEFAULT :: 1
 STAMP_COST :: 100
 SUPPLY_CAPACITY :: 32
+HEALTH_ABANDONED :: 0.25
+HEALTH_STRUGGLING :: 0.6
+HEALTH_NIBBLE :: 0.05
+HEALTH_REGEN :: 0.02
+TAX_HIGH :: 4
 
 Lot_Kind :: enum {
 	Plot,
@@ -50,6 +55,7 @@ Building_Kind :: enum u8 {
 Building :: struct {
 	kind:    Building_Kind,
 	present: bool,
+	health:  f32,
 }
 
 Lot :: struct {
@@ -114,6 +120,18 @@ building_kind_at :: proc(c: City, x, y: int) -> (kind: Building_Kind, ok: bool) 
 	return b.kind, true
 }
 
+building_health_at :: proc(c: City, x, y: int) -> (health: f32, ok: bool) {
+	id := city_lot(c, x, y).building_id
+	if id == 0 || id > MAX_BUILDINGS {
+		return 0, false
+	}
+	b := c.buildings[id - 1]
+	if !b.present {
+		return 0, false
+	}
+	return b.health, true
+}
+
 @(private)
 alloc_building :: proc(c: ^City, kind: Building_Kind) -> u16 {
 	for i in 0 ..< MAX_BUILDINGS {
@@ -121,6 +139,7 @@ alloc_building :: proc(c: ^City, kind: Building_Kind) -> u16 {
 			c.buildings[i] = Building {
 				kind    = kind,
 				present = true,
+				health  = 1,
 			}
 			return u16(i + 1)
 		}
@@ -392,7 +411,7 @@ flood_supply :: proc(c: ^City, id: u16, dest: ^[MAP_SIZE * MAP_SIZE]bool) {
 city_population :: proc(c: City) -> int {
 	n := 0
 	for b in c.buildings {
-		if b.present && b.kind == .House {
+		if producing(b) && b.kind == .House {
 			n += HOUSE_POPULATION
 		}
 	}
@@ -403,11 +422,26 @@ city_jobs :: proc(c: City) -> int {
 	return shop_jobs(c) + factory_jobs(c)
 }
 
+city_happiness :: proc(c: City) -> f32 {
+	n := 0
+	sum: f32
+	for b in c.buildings {
+		if b.present {
+			sum += b.health
+			n += 1
+		}
+	}
+	if n == 0 {
+		return 1
+	}
+	return sum / f32(n)
+}
+
 @(private)
 shop_jobs :: proc(c: City) -> int {
 	n := 0
 	for b in c.buildings {
-		if b.present && b.kind == .Shop {
+		if producing(b) && b.kind == .Shop {
 			n += SHOP_JOBS
 		}
 	}
@@ -418,7 +452,7 @@ shop_jobs :: proc(c: City) -> int {
 factory_jobs :: proc(c: City) -> int {
 	n := 0
 	for b in c.buildings {
-		if b.present && b.kind == .Factory {
+		if producing(b) && b.kind == .Factory {
 			n += FACTORY_JOBS
 		}
 	}
@@ -441,6 +475,7 @@ Pick :: proc(n: int) -> int
 
 tick :: proc(c: ^City, pick: Pick) {
 	recompute_supply(c)
+	apply_health(c)
 	grow_houses := city_residential_demand(c^) > 0
 	grow_shops := city_commercial_demand(c^) > 0
 	grow_factories := city_industrial_demand(c^) > 0
@@ -454,6 +489,63 @@ tick :: proc(c: ^City, pick: Pick) {
 		grow(c, .Industrial, .Factory, pick)
 	}
 	c.money += c.tax * city_population(c^)
+}
+
+@(private)
+apply_health :: proc(c: ^City) {
+	// ponytail: producing pop, so demand can return; husks may pulse until shops exist
+	unemployed := city_population(c^) > city_jobs(c^)
+	for id in 1 ..= MAX_BUILDINGS {
+		b := &c.buildings[id - 1]
+		if !b.present {
+			continue
+		}
+		delta: f32
+		if is_grown(b.kind) {
+			if !lots_supplied(c, u16(id), &c.powered) {
+				delta -= HEALTH_NIBBLE
+			}
+			if !lots_supplied(c, u16(id), &c.watered) {
+				delta -= HEALTH_NIBBLE
+			}
+		}
+		if unemployed && b.kind == .House {
+			delta -= HEALTH_NIBBLE
+		}
+		if c.tax >= TAX_HIGH {
+			delta -= HEALTH_NIBBLE
+		}
+		if delta == 0 {
+			delta = HEALTH_REGEN
+		}
+		b.health = clamp(b.health + delta, 0, 1)
+	}
+}
+
+@(private)
+producing :: proc(b: Building) -> bool {
+	return b.present && b.health > HEALTH_ABANDONED
+}
+
+@(private)
+is_grown :: proc(kind: Building_Kind) -> bool {
+	switch kind {
+	case .House, .Shop, .Factory:
+		return true
+	case .Station, .Tower, .Park, .School, .Police, .Firehouse, .Hospital:
+		return false
+	}
+	return false
+}
+
+@(private)
+lots_supplied :: proc(c: ^City, id: u16, flags: ^[MAP_SIZE * MAP_SIZE]bool) -> bool {
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == id && !flags[i] {
+			return false
+		}
+	}
+	return true
 }
 
 @(private)
@@ -529,10 +621,11 @@ has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(4)
+SAVE_VERSION :: u8(5)
 SAVE_HEADER :: 1 + 8 + 8 + 2
 LOT_BYTES :: 5
-SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS + MAP_SIZE * MAP_SIZE * LOT_BYTES
+BUILDING_BYTES :: 5
+SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES
 
 city_save :: proc(c: City, path: string) -> bool {
 	buf: [SAVE_MAX]u8
@@ -550,7 +643,8 @@ city_save :: proc(c: City, path: string) -> bool {
 		n += 1
 		remap[id] = n
 		buf[i] = u8(b.kind)
-		i += 1
+		put_f32le(buf[i + 1:i + 5], b.health)
+		i += BUILDING_BYTES
 	}
 	put_u16le(buf[17:19], n)
 	for lot in c.lots {
@@ -576,7 +670,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	if count > MAX_BUILDINGS {
 		return {}, false
 	}
-	if len(data) != SAVE_HEADER + count + MAP_SIZE * MAP_SIZE * LOT_BYTES {
+	if len(data) != SAVE_HEADER + count * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES {
 		return {}, false
 	}
 	c.money = int(get_i64le(data[1:9]))
@@ -586,11 +680,16 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		if data[i] >= u8(len(Building_Kind)) {
 			return {}, false
 		}
+		h := get_f32le(data[i + 1:i + 5])
+		if h != h || h < 0 || h > 1 {
+			return {}, false
+		}
 		c.buildings[b] = Building {
 			kind    = Building_Kind(data[i]),
 			present = true,
+			health  = h,
 		}
-		i += 1
+		i += BUILDING_BYTES
 	}
 	refs: [MAX_BUILDINGS]int
 	for &lot in c.lots {
@@ -647,4 +746,21 @@ get_i64le :: proc(b: []u8) -> i64 {
 		u |= u64(b[j]) << uint(8 * j)
 	}
 	return transmute(i64)u
+}
+
+@(private)
+put_f32le :: proc(b: []u8, v: f32) {
+	u := transmute(u32)v
+	for j in 0 ..< 4 {
+		b[j] = u8(u >> uint(8 * j))
+	}
+}
+
+@(private)
+get_f32le :: proc(b: []u8) -> f32 {
+	u: u32
+	for j in 0 ..< 4 {
+		u |= u32(b[j]) << uint(8 * j)
+	}
+	return transmute(f32)u
 }

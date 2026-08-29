@@ -4,13 +4,13 @@
 
 **Blocked by:** 04: Tax rate; 06: Power and water
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Every building has health from 0 to 1; struggling and abandoned are visible bands (stamp/color) without an overlay
-- [ ] Struggling houses and shops still count population and jobs; abandoned ones count zero
-- [ ] Abandoned is a bottom band (not only exactly 0); the zone stays; new growth skips those plots
-- [ ] Missing power or water nibbles grown-building health; high tax nibbles health; unemployment nibbles house health only
-- [ ] Facilities do not take unemployment nibbles; they can still lose health from other causes later
-- [ ] HUD shows happiness as the city-wide average of building health (empty city is not “collapsing”)
-- [ ] Health rises when causes lift; a husk can leave abandoned and produce again
-- [ ] Save/load keeps health
+- [x] Every building has health from 0 to 1; struggling and abandoned are visible bands (stamp/color) without an overlay
+- [x] Struggling houses and shops still count population and jobs; abandoned ones count zero
+- [x] Abandoned is a bottom band (not only exactly 0); the zone stays; new growth skips those plots
+- [x] Missing power or water nibbles grown-building health; high tax nibbles health; unemployment nibbles house health only
+- [x] Facilities do not take unemployment nibbles; they can still lose health from other causes later
+- [x] HUD shows happiness as the city-wide average of building health (empty city is not “collapsing”)
+- [x] Health rises when causes lift; a husk can leave abandoned and produce again
+- [x] Save/load keeps health

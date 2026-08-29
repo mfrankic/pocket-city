@@ -196,22 +196,24 @@ pick_first :: proc(n: int) -> int {
 @(test)
 grown_house_has_a_building_identity :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	tick(&c, pick_first)
-	testing.expect(t, city_lot(c, 1, 0).building_id != 0)
-	expect_building(t, c, 1, 0, .House)
-	testing.expect_value(t, city_lot(c, 2, 0).building_id, u16(0))
-	expect_no_building(t, c, 2, 0)
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).building_id != 0)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	testing.expect_value(t, city_lot(c, p[1][0], p[1][1]).building_id, u16(0))
+	expect_no_building(t, c, p[1][0], p[1][1])
 }
 
 @(test)
 house_grows_on_road_adjacent_residential :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	tick(&c, pick_first)
-	expect_building(t, c, 1, 0, .House)
+	expect_building(t, c, p[0][0], p[0][1], .House)
 	testing.expect_value(t, city_population(c), 4)
 	testing.expect_value(t, city_residential_demand(c), 4)
 	testing.expect_value(t, city_commercial_demand(c), 4)
@@ -240,14 +242,15 @@ industrial_without_shops_does_not_grow :: proc(t: ^testing.T) {
 @(test)
 tick_grows_one_house_and_one_shop :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
-	paint_zone(&c, 0, 1, .Commercial)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
 	tick(&c, pick_first)
-	expect_building(t, c, 1, 0, .House)
-	expect_no_building(t, c, 0, 1)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_no_building(t, c, p[1][0], p[1][1])
 	tick(&c, pick_first)
-	expect_building(t, c, 0, 1, .Shop)
+	expect_building(t, c, p[1][0], p[1][1], .Shop)
 	testing.expect_value(t, city_population(c), 4)
 	testing.expect_value(t, city_jobs(c), 4)
 	testing.expect_value(t, city_residential_demand(c), 8)
@@ -257,20 +260,21 @@ tick_grows_one_house_and_one_shop :: proc(t: ^testing.T) {
 @(test)
 factory_grows_when_industrial_demand_is_positive :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Commercial)
-	paint_zone(&c, 1, 1, .Industrial)
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	paint_zone(&c, p[2][0], p[2][1], .Industrial)
 	tick(&c, pick_first)
-	expect_building(t, c, 0, 0, .House)
-	expect_no_building(t, c, 2, 0)
-	expect_no_building(t, c, 1, 1)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_no_building(t, c, p[1][0], p[1][1])
+	expect_no_building(t, c, p[2][0], p[2][1])
 	tick(&c, pick_first)
-	expect_building(t, c, 2, 0, .Shop)
-	expect_no_building(t, c, 1, 1)
+	expect_building(t, c, p[1][0], p[1][1], .Shop)
+	expect_no_building(t, c, p[2][0], p[2][1])
 	testing.expect_value(t, city_industrial_demand(c), 4)
 	tick(&c, pick_first)
-	expect_building(t, c, 1, 1, .Factory)
+	expect_building(t, c, p[2][0], p[2][1], .Factory)
 	testing.expect_value(t, city_population(c), 4)
 	testing.expect_value(t, city_jobs(c), 8)
 	testing.expect_value(t, city_residential_demand(c), 12)
@@ -281,44 +285,47 @@ factory_grows_when_industrial_demand_is_positive :: proc(t: ^testing.T) {
 @(test)
 tick_grows_at_most_one_house :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Residential)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
 	tick(&c, pick_first)
-	expect_building(t, c, 0, 0, .House)
-	expect_no_building(t, c, 2, 0)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_no_building(t, c, p[1][0], p[1][1])
 }
 
 @(test)
 tick_grows_at_most_one_factory :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 1)
-	paint_zone(&c, 1, 0, .Residential)
-	paint_zone(&c, 0, 1, .Commercial)
-	paint_zone(&c, 2, 1, .Industrial)
-	paint_zone(&c, 1, 2, .Industrial)
+	p, ok := supplied_plots(&c, 4)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	paint_zone(&c, p[2][0], p[2][1], .Industrial)
+	paint_zone(&c, p[3][0], p[3][1], .Industrial)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
-	expect_building(t, c, 2, 1, .Factory)
-	expect_no_building(t, c, 1, 2)
+	expect_building(t, c, p[2][0], p[2][1], .Factory)
+	expect_no_building(t, c, p[3][0], p[3][1])
 }
 
 @(test)
 two_houses_have_distinct_identities :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Residential)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
-	id_a := city_lot(c, 0, 0).building_id
-	id_b := city_lot(c, 2, 0).building_id
+	id_a := city_lot(c, p[0][0], p[0][1]).building_id
+	id_b := city_lot(c, p[1][0], p[1][1]).building_id
 	testing.expect(t, id_a != 0)
 	testing.expect(t, id_b != 0)
 	testing.expect(t, id_a != id_b)
-	expect_building(t, c, 0, 0, .House)
-	expect_building(t, c, 2, 0, .House)
+	expect_building(t, c, p[0][0], p[0][1], .House)
+	expect_building(t, c, p[1][0], p[1][1], .House)
 }
 
 pick_second :: proc(n: int) -> int {
@@ -328,36 +335,41 @@ pick_second :: proc(n: int) -> int {
 @(test)
 tick_uses_pick_to_choose_house :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Residential)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
 	tick(&c, pick_second)
-	expect_no_building(t, c, 0, 0)
-	expect_building(t, c, 2, 0, .House)
+	expect_no_building(t, c, p[0][0], p[0][1])
+	expect_building(t, c, p[1][0], p[1][1], .House)
 }
 
 @(test)
 bulldoze_removes_building_and_keeps_zone :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
-	tick(&c, pick_first)
-	ok := bulldoze(&c, 1, 0)
+	p, ok := supplied_plots(&c, 1)
 	testing.expect(t, ok)
-	lot := city_lot(c, 1, 0)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	tick(&c, pick_first)
+	ok = bulldoze(&c, p[0][0], p[0][1])
+	testing.expect(t, ok)
+	lot := city_lot(c, p[0][0], p[0][1])
 	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
 	testing.expect_value(t, lot.zone, Zone.Residential)
-	expect_no_building(t, c, 1, 0)
+	expect_no_building(t, c, p[0][0], p[0][1])
 	testing.expect_value(t, city_population(c), 0)
 }
 
 @(test)
 tick_collects_tax_on_population :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	money := city_money(c)
 	tick(&c, pick_first)
-	testing.expect_value(t, city_money(c), 1989)
+	testing.expect_value(t, city_population(c), 4)
+	testing.expect_value(t, city_money(c), money + 4)
 }
 
 @(test)
@@ -366,10 +378,12 @@ player_sets_tax_and_tick_income_uses_it :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_tax(c), 1)
 	city_set_tax(&c, 3)
 	testing.expect_value(t, city_tax(c), 3)
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	money := city_money(c)
 	tick(&c, pick_first)
-	testing.expect_value(t, city_money(c), 1997)
+	testing.expect_value(t, city_money(c), money + 12)
 }
 
 @(test)
@@ -397,27 +411,29 @@ broke_city_cannot_bulldoze_forest :: proc(t: ^testing.T) {
 @(test)
 house_stays_after_shop_is_bulldozed :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
-	paint_zone(&c, 0, 1, .Commercial)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
-	bulldoze(&c, 0, 1)
-	expect_building(t, c, 1, 0, .House)
+	bulldoze(&c, p[1][0], p[1][1])
+	expect_building(t, c, p[0][0], p[0][1], .House)
 	testing.expect_value(t, city_population(c), 4)
 }
 
 @(test)
 changing_zone_clears_the_building :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
-	tick(&c, pick_first)
-	ok := paint_zone(&c, 1, 0, .Commercial)
+	p, ok := supplied_plots(&c, 1)
 	testing.expect(t, ok)
-	lot := city_lot(c, 1, 0)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	tick(&c, pick_first)
+	ok = paint_zone(&c, p[0][0], p[0][1], .Commercial)
+	testing.expect(t, ok)
+	lot := city_lot(c, p[0][0], p[0][1])
 	testing.expect_value(t, lot.zone, Zone.Commercial)
-	expect_no_building(t, c, 1, 0)
+	expect_no_building(t, c, p[0][0], p[0][1])
 	testing.expect_value(t, city_population(c), 0)
 }
 
@@ -438,59 +454,61 @@ save_then_load_keeps_tax :: proc(t: ^testing.T) {
 @(test)
 save_then_load_restores_lots_and_money :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	tick(&c, pick_first)
 	path := "city_roundtrip.save"
 	defer os.remove(path)
 	testing.expect(t, city_save(c, path))
-	loaded, ok := city_load(path)
-	testing.expect(t, ok)
-	testing.expect_value(t, city_money(loaded), 1989)
-	testing.expect_value(t, city_lot(loaded, 0, 0).kind, Lot_Kind.Road)
-	expect_building(t, loaded, 1, 0, .House)
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	testing.expect_value(t, city_money(loaded), city_money(c))
+	expect_building(t, loaded, p[0][0], p[0][1], .House)
 	testing.expect_value(t, city_population(loaded), 4)
 }
 
 @(test)
 save_then_load_round_trips_building_identity :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Residential)
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
 	path := "city_identity.save"
 	defer os.remove(path)
 	testing.expect(t, city_save(c, path))
-	loaded, ok := city_load(path)
-	testing.expect(t, ok)
-	id_a := city_lot(loaded, 0, 0).building_id
-	id_b := city_lot(loaded, 2, 0).building_id
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	id_a := city_lot(loaded, p[0][0], p[0][1]).building_id
+	id_b := city_lot(loaded, p[1][0], p[1][1]).building_id
 	testing.expect(t, id_a != 0)
 	testing.expect(t, id_b != 0)
 	testing.expect(t, id_a != id_b)
-	expect_building(t, loaded, 0, 0, .House)
-	expect_building(t, loaded, 2, 0, .House)
+	expect_building(t, loaded, p[0][0], p[0][1], .House)
+	expect_building(t, loaded, p[1][0], p[1][1], .House)
 }
 
 @(test)
 save_then_load_keeps_industrial_and_factory :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Commercial)
-	paint_zone(&c, 1, 1, .Industrial)
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	paint_zone(&c, p[2][0], p[2][1], .Industrial)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
 	tick(&c, pick_first)
 	path := "city_industrial.save"
 	defer os.remove(path)
 	testing.expect(t, city_save(c, path))
-	loaded, ok := city_load(path)
-	testing.expect(t, ok)
-	testing.expect_value(t, city_lot(loaded, 1, 1).zone, Zone.Industrial)
-	expect_building(t, loaded, 1, 1, .Factory)
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	testing.expect_value(t, city_lot(loaded, p[2][0], p[2][1]).zone, Zone.Industrial)
+	expect_building(t, loaded, p[2][0], p[2][1], .Factory)
 	testing.expect_value(t, city_jobs(loaded), 8)
 	testing.expect_value(t, city_industrial_demand(loaded), 0)
 }
@@ -623,13 +641,14 @@ cannot_stamp_on_forest :: proc(t: ^testing.T) {
 @(test)
 cannot_stamp_on_an_occupied_plot :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 0, 0)
-	paint_zone(&c, 1, 0, .Residential)
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	tick(&c, pick_first)
 	money := city_money(c)
-	testing.expect(t, !stamp(&c, 1, 0, .Park))
+	testing.expect(t, !stamp(&c, p[0][0], p[0][1], .Park))
 	testing.expect_value(t, city_money(c), money)
-	expect_building(t, c, 1, 0, .House)
+	expect_building(t, c, p[0][0], p[0][1], .House)
 }
 
 @(test)
@@ -667,6 +686,108 @@ find_cardinal_grass :: proc(c: City, x, y: int) -> (gx, gy: int, ok: bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+find_cardinal_road :: proc(c: City, x, y: int) -> (rx, ry: int, ok: bool) {
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := x + n[0], y + n[1]
+		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+			continue
+		}
+		if city_lot(c, nx, ny).kind == .Road {
+			return nx, ny, true
+		}
+	}
+	return 0, 0, false
+}
+
+find_empty_cardinal_plot :: proc(c: City, x, y: int) -> (px, py: int, ok: bool) {
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := x + n[0], y + n[1]
+		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+			continue
+		}
+		lot := city_lot(c, nx, ny)
+		if lot.kind == .Plot && lot.terrain == .Grass && lot.building_id == 0 {
+			return nx, ny, true
+		}
+	}
+	return 0, 0, false
+}
+
+plot_touches_road :: proc(c: City, x, y: int) -> bool {
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := x + n[0], y + n[1]
+		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+			continue
+		}
+		if city_lot(c, nx, ny).kind == .Road {
+			return true
+		}
+	}
+	return false
+}
+
+supplied_plots :: proc(c: ^City, n: int) -> (out: [8][2]int, ok: bool) {
+	lx, ly, lake := find_terrain(c^, .Lake)
+	if !lake {
+		return {}, false
+	}
+	tx, ty, grass := find_cardinal_grass(c^, lx, ly)
+	if !grass {
+		return {}, false
+	}
+	if !paint_access_road(c, tx, ty) {
+		return {}, false
+	}
+	if !stamp(c, tx, ty, .Tower) {
+		return {}, false
+	}
+	rx, ry, road := find_cardinal_road(c^, tx, ty)
+	if !road {
+		return {}, false
+	}
+	sx, sy, plot := find_empty_cardinal_plot(c^, rx, ry)
+	if !plot {
+		return {}, false
+	}
+	if !stamp(c, sx, sy, .Station) {
+		return {}, false
+	}
+	for dy in 1 ..= n + 2 {
+		ny := ry + dy
+		if ny >= MAP_SIZE {
+			break
+		}
+		lot := city_lot(c^, rx, ny)
+		if lot.kind == .Plot && lot.terrain == .Grass && lot.building_id == 0 {
+			paint_road(c, rx, ny)
+		}
+	}
+	count := 0
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			if count >= n {
+				return out, true
+			}
+			lot := city_lot(c^, x, y)
+			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+				continue
+			}
+			if !lot_powered(c^, x, y) || !lot_watered(c^, x, y) {
+				continue
+			}
+			if !plot_touches_road(c^, x, y) {
+				continue
+			}
+			out[count] = {x, y}
+			count += 1
+		}
+	}
+	return out, count >= n
 }
 
 @(test)
@@ -718,13 +839,14 @@ bulldoze_any_lot_of_2x2_station_removes_the_facility :: proc(t: ^testing.T) {
 @(test)
 growth_still_dribbles_onto_remaining_empty_zoned_plots :: proc(t: ^testing.T) {
 	c := city_new()
-	paint_road(&c, 1, 0)
-	paint_zone(&c, 0, 0, .Residential)
-	paint_zone(&c, 2, 0, .Residential)
-	testing.expect(t, stamp(&c, 0, 0, .Park))
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Residential)
+	testing.expect(t, stamp(&c, p[0][0], p[0][1], .Park))
 	tick(&c, pick_first)
-	expect_building(t, c, 0, 0, .Park)
-	expect_building(t, c, 2, 0, .House)
+	expect_building(t, c, p[0][0], p[0][1], .Park)
+	expect_building(t, c, p[1][0], p[1][1], .House)
 	testing.expect_value(t, city_population(c), 4)
 }
 
@@ -794,4 +916,168 @@ paint_access_road :: proc(c: ^City, x, y: int) -> bool {
 		return false
 	}
 	return paint_road(c, nx, ny)
+}
+
+@(test)
+station_powers_plots_on_its_road :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect(t, lot_powered(c, 1, 0))
+	testing.expect(t, lot_powered(c, 0, 1))
+}
+
+@(test)
+unconnected_road_stays_dark :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	paint_road(&c, 15, 15)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, !lot_powered(c, 15, 16))
+}
+
+@(test)
+station_powers_only_up_to_capacity :: proc(t: ^testing.T) {
+	c := city_new()
+	for x in 0 ..= 31 {
+		paint_road(&c, x, 0)
+	}
+	testing.expect(t, stamp(&c, 0, 1, .Station))
+	n := 0
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			if lot_powered(c, x, y) {
+				n += 1
+			}
+		}
+	}
+	testing.expect_value(t, n, SUPPLY_CAPACITY)
+	testing.expect(t, lot_powered(c, 32, 0))
+	testing.expect(t, !lot_powered(c, 31, 1))
+}
+
+@(test)
+two_by_two_station_reaches_past_one_by_one_capacity :: proc(t: ^testing.T) {
+	c := city_new()
+	for x in 0 ..= 31 {
+		paint_road(&c, x, 0)
+	}
+	testing.expect(t, stamp(&c, 0, 1, .Station, 2))
+	testing.expect(t, lot_powered(c, 31, 1))
+}
+
+@(test)
+powered_tower_waters_plots_on_its_road :: proc(t: ^testing.T) {
+	c := city_new()
+	lx, ly, found := find_terrain(c, .Lake)
+	testing.expect(t, found)
+	tx, ty, grass := find_cardinal_grass(c, lx, ly)
+	testing.expect(t, grass)
+	testing.expect(t, paint_access_road(&c, tx, ty))
+	testing.expect(t, stamp(&c, tx, ty, .Tower))
+	rx, ry, road := find_cardinal_road(c, tx, ty)
+	testing.expect(t, road)
+	sx, sy, plot := find_empty_cardinal_plot(c, rx, ry)
+	testing.expect(t, plot)
+	testing.expect(t, stamp(&c, sx, sy, .Station))
+	testing.expect(t, lot_powered(c, tx, ty))
+	testing.expect(t, lot_watered(c, tx, ty))
+	wx, wy, wet := find_empty_cardinal_plot(c, rx, ry)
+	testing.expect(t, wet)
+	testing.expect(t, lot_watered(c, wx, wy))
+}
+
+@(test)
+unpowered_tower_supplies_no_water :: proc(t: ^testing.T) {
+	c := city_new()
+	lx, ly, found := find_terrain(c, .Lake)
+	testing.expect(t, found)
+	tx, ty, grass := find_cardinal_grass(c, lx, ly)
+	testing.expect(t, grass)
+	testing.expect(t, paint_access_road(&c, tx, ty))
+	testing.expect(t, stamp(&c, tx, ty, .Tower))
+	testing.expect(t, !lot_powered(c, tx, ty))
+	rx, ry, road := find_cardinal_road(c, tx, ty)
+	testing.expect(t, road)
+	wx, wy, plot := find_empty_cardinal_plot(c, rx, ry)
+	testing.expect(t, plot)
+	testing.expect(t, !lot_watered(c, tx, ty))
+	testing.expect(t, !lot_watered(c, wx, wy))
+}
+
+@(test)
+unconnected_road_stays_dry :: proc(t: ^testing.T) {
+	c := city_new()
+	lx, ly, found := find_terrain(c, .Lake)
+	testing.expect(t, found)
+	tx, ty, grass := find_cardinal_grass(c, lx, ly)
+	testing.expect(t, grass)
+	testing.expect(t, paint_access_road(&c, tx, ty))
+	testing.expect(t, stamp(&c, tx, ty, .Tower))
+	rx, ry, road := find_cardinal_road(c, tx, ty)
+	testing.expect(t, road)
+	sx, sy, plot := find_empty_cardinal_plot(c, rx, ry)
+	testing.expect(t, plot)
+	testing.expect(t, stamp(&c, sx, sy, .Station))
+	paint_road(&c, 15, 15)
+	testing.expect(t, lot_watered(c, tx, ty))
+	testing.expect(t, !lot_watered(c, 15, 16))
+}
+
+@(test)
+save_then_load_recomputes_power_and_water :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	x, y := p[0][0], p[0][1]
+	testing.expect(t, lot_powered(c, x, y))
+	testing.expect(t, lot_watered(c, x, y))
+	path := "city_supply.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	testing.expect(t, lot_powered(loaded, x, y))
+	testing.expect(t, lot_watered(loaded, x, y))
+}
+
+@(test)
+painting_a_road_extends_power :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect(t, !lot_powered(c, 3, 1))
+	paint_road(&c, 2, 0)
+	paint_road(&c, 3, 0)
+	testing.expect(t, lot_powered(c, 3, 1))
+}
+
+@(test)
+bulldozing_a_station_cuts_power :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, bulldoze(&c, 1, 0))
+	testing.expect(t, !lot_powered(c, 0, 1))
+}
+
+@(test)
+house_does_not_grow_without_power :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	paint_zone(&c, 1, 0, .Residential)
+	tick(&c, pick_first)
+	expect_no_building(t, c, 1, 0)
+}
+
+@(test)
+house_does_not_grow_without_water :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	paint_zone(&c, 0, 1, .Residential)
+	tick(&c, pick_first)
+	expect_no_building(t, c, 0, 1)
 }

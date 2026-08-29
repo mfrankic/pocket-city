@@ -27,6 +27,12 @@ Tool :: enum {
 	Hospital,
 }
 
+Overlay :: enum {
+	None,
+	Power,
+	Water,
+}
+
 main :: proc() {
 	rl.InitWindow(WIN_W, WIN_H, "Pocket City")
 	defer rl.CloseWindow()
@@ -35,6 +41,7 @@ main :: proc() {
 	c := city.city_new()
 	paused := true
 	tool := Tool.Road
+	overlay := Overlay.None
 	tick_acc: f32
 	cam := rl.Camera2D {
 		zoom   = 1,
@@ -57,6 +64,8 @@ main :: proc() {
 		if rl.IsKeyPressed(.ZERO) do tool = .Police
 		if rl.IsKeyPressed(.F) do tool = .Firehouse
 		if rl.IsKeyPressed(.H) do tool = .Hospital
+		if rl.IsKeyPressed(.P) do overlay = .None if overlay == .Power else .Power
+		if rl.IsKeyPressed(.W) do overlay = .None if overlay == .Water else .Water
 		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
 		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
@@ -137,12 +146,12 @@ main :: proc() {
 					i32(y * LOT_PX),
 					LOT_PX,
 					LOT_PX,
-					lot_color(c, x, y),
+					lot_color(c, x, y, overlay),
 				)
 			}
 		}
 		rl.EndMode2D()
-		draw_hud(c, paused, tool)
+		draw_hud(c, paused, tool, overlay)
 		rl.EndDrawing()
 	}
 }
@@ -151,8 +160,17 @@ pick :: proc(n: int) -> int {
 	return rand.int_max(n)
 }
 
-lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
+lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
+	if lot.kind != .Road {
+		switch overlay {
+		case .Power:
+			return rl.GOLD if city.lot_powered(c, x, y) else rl.Color{20, 20, 20, 255}
+		case .Water:
+			return rl.SKYBLUE if city.lot_watered(c, x, y) else rl.Color{20, 20, 20, 255}
+		case .None:
+		}
+	}
 	if lot.kind == .Road {
 		return rl.GRAY
 	}
@@ -202,7 +220,7 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 	return rl.MAGENTA
 }
 
-draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
+draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	line1 := fmt.ctprintf(
 		"$%d   pop %d   jobs %d   R %d   C %d   I %d   tax %d",
@@ -216,9 +234,10 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s  %v  1-5 paint  6-0 F H stamp  shift 2x2  [ ] tax  space  S/L  wheel  RMB",
+		"%s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W overlay  [ ] tax  space  S/L",
 		run,
 		tool,
+		overlay,
 	)
 	rl.DrawText(line1, 8, 8, 18, rl.WHITE)
 	rl.DrawText(line2, 8, 36, 16, rl.LIGHTGRAY)

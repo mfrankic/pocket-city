@@ -13,6 +13,7 @@ SHOP_JOBS :: 4
 FACTORY_JOBS :: 4
 TAX_DEFAULT :: 1
 STAMP_COST :: 100
+SUPPLY_CAPACITY :: 32
 
 Lot_Kind :: enum {
 	Plot,
@@ -65,6 +66,8 @@ City :: struct {
 	money:     int,
 	tax:       int,
 	buildings: [MAX_BUILDINGS]Building,
+	powered:   [MAP_SIZE * MAP_SIZE]bool,
+	watered:   [MAP_SIZE * MAP_SIZE]bool,
 }
 
 city_new :: proc() -> City {
@@ -165,6 +168,7 @@ paint_road :: proc(c: ^City, x, y: int) -> bool {
 		kind    = .Road,
 		terrain = lot.terrain,
 	}
+	recompute_supply(c)
 	return true
 }
 
@@ -212,6 +216,7 @@ stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
 			lot.zone = .None
 		}
 	}
+	recompute_supply(c)
 	return true
 }
 
@@ -248,6 +253,7 @@ paint_zone :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 		remove_building(c, lot.building_id)
 	}
 	lot.zone = zone
+	recompute_supply(c)
 	return true
 }
 
@@ -260,10 +266,12 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 		lot^ = Lot {
 			terrain = lot.terrain,
 		}
+		recompute_supply(c)
 		return true
 	}
 	if lot.building_id != 0 {
 		remove_building(c, lot.building_id)
+		recompute_supply(c)
 		return true
 	}
 	if lot.terrain == .Forest {
@@ -287,6 +295,97 @@ city_tax :: proc(c: City) -> int {
 
 city_set_tax :: proc(c: ^City, tax: int) {
 	c.tax = max(tax, 0)
+}
+
+lot_powered :: proc(c: City, x, y: int) -> bool {
+	return c.powered[y * MAP_SIZE + x]
+}
+
+lot_watered :: proc(c: City, x, y: int) -> bool {
+	return c.watered[y * MAP_SIZE + x]
+}
+
+@(private)
+recompute_supply :: proc(c: ^City) {
+	c.powered = {}
+	c.watered = {}
+	for id in 1 ..= MAX_BUILDINGS {
+		b := c.buildings[id - 1]
+		if b.present && b.kind == .Station {
+			flood_supply(c, u16(id), &c.powered)
+		}
+	}
+	for id in 1 ..= MAX_BUILDINGS {
+		b := c.buildings[id - 1]
+		if b.present && b.kind == .Tower && facility_powered(c^, u16(id)) {
+			flood_supply(c, u16(id), &c.watered)
+		}
+	}
+}
+
+@(private)
+facility_powered :: proc(c: City, id: u16) -> bool {
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == id && c.powered[i] {
+			return true
+		}
+	}
+	return false
+}
+
+@(private)
+flood_supply :: proc(c: ^City, id: u16, dest: ^[MAP_SIZE * MAP_SIZE]bool) {
+	n_plots := 0
+	for lot in c.lots {
+		if lot.building_id == id {
+			n_plots += 1
+		}
+	}
+	cap := SUPPLY_CAPACITY * n_plots
+	visited: [MAP_SIZE * MAP_SIZE]bool
+	queue: [MAP_SIZE * MAP_SIZE]int
+	head, tail := 0, 0
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id != id {
+			continue
+		}
+		x, y := i % MAP_SIZE, i / MAP_SIZE
+		for n in cardinal {
+			nx, ny := x + n[0], y + n[1]
+			if !in_bounds(nx, ny) {
+				continue
+			}
+			ni := ny * MAP_SIZE + nx
+			if c.lots[ni].kind == .Road && !visited[ni] {
+				visited[ni] = true
+				queue[tail] = ni
+				tail += 1
+			}
+		}
+	}
+	for head < tail {
+		i := queue[head]
+		head += 1
+		x, y := i % MAP_SIZE, i / MAP_SIZE
+		for n in cardinal {
+			nx, ny := x + n[0], y + n[1]
+			if !in_bounds(nx, ny) {
+				continue
+			}
+			ni := ny * MAP_SIZE + nx
+			if c.lots[ni].kind == .Road {
+				if !visited[ni] {
+					visited[ni] = true
+					queue[tail] = ni
+					tail += 1
+				}
+			} else if !dest[ni] && cap > 0 {
+				dest[ni] = true
+				cap -= 1
+			}
+		}
+	}
 }
 
 // ponytail: per building, not plots; 09 multiplies by footprint when 2×2 births
@@ -341,6 +440,7 @@ city_industrial_demand :: proc(c: City) -> int {
 Pick :: proc(n: int) -> int
 
 tick :: proc(c: ^City, pick: Pick) {
+	recompute_supply(c)
 	grow_houses := city_residential_demand(c^) > 0
 	grow_shops := city_commercial_demand(c^) > 0
 	grow_factories := city_industrial_demand(c^) > 0
@@ -390,7 +490,12 @@ grow :: proc(c: ^City, zone: Zone, kind: Building_Kind, pick: Pick) {
 @(private)
 eligible :: proc(c: City, x, y: int, zone: Zone) -> bool {
 	lot := city_lot(c, x, y)
-	return lot.kind == .Plot && lot.zone == zone && lot.building_id == 0 && has_road_access(c, x, y)
+	return lot.kind == .Plot &&
+		lot.zone == zone &&
+		lot.building_id == 0 &&
+		has_road_access(c, x, y) &&
+		lot_powered(c, x, y) &&
+		lot_watered(c, x, y)
 }
 
 @(private)
@@ -512,6 +617,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 			return {}, false
 		}
 	}
+	recompute_supply(&c)
 	return c, true
 }
 

@@ -4,10 +4,14 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The player can set 1×, 2×, and 4×
-- [ ] 1× matches the current tick rate
-- [ ] 2× runs twice as many ticks per second as 1×; 4× four times
-- [ ] Pause stops ticks at any speed
-- [ ] HUD shows the current speed
+- [x] The player can set 1×, 2×, and 4×
+- [x] 1× matches the current tick rate
+- [x] 2× runs twice as many ticks per second as 1×; 4× four times
+- [x] Pause stops ticks at any speed
+- [x] HUD shows the current speed
+
+## Answer
+
+Speed is window-only. `-`/`=` (and keypad) step 1× → 2× → 4×. 1× keeps `TICK_DT`; 2× and 4× multiply frame time into the accumulator so more `city.tick` calls happen per second. Pause still skips the accumulator at any speed. The HUD prints the current multiplier next to PAUSED/RUNNING.

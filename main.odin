@@ -48,6 +48,7 @@ main :: proc() {
 
 	c := city.city_new()
 	paused := true
+	speed := 1
 	tool := Tool.Road
 	overlay := Overlay.None
 	tick_acc: f32
@@ -82,6 +83,12 @@ main :: proc() {
 		if rl.IsKeyPressed(.I) do overlay = .None if overlay == .Fire else .Fire
 		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
 		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
+		if rl.IsKeyPressed(.MINUS) || rl.IsKeyPressed(.KP_SUBTRACT) {
+			if speed > 1 do speed /= 2
+		}
+		if rl.IsKeyPressed(.EQUAL) || rl.IsKeyPressed(.KP_ADD) {
+			if speed < 4 do speed *= 2
+		}
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
 		if rl.IsKeyPressed(.S) {
 			city.city_save(c, city.SAVE_PATH)
@@ -141,7 +148,7 @@ main :: proc() {
 		}
 
 		if !paused {
-			tick_acc += rl.GetFrameTime()
+			tick_acc += rl.GetFrameTime() * f32(speed)
 			for tick_acc >= TICK_DT {
 				tick_acc -= TICK_DT
 				city.tick(&c, pick)
@@ -163,7 +170,7 @@ main :: proc() {
 			}
 		}
 		rl.EndMode2D()
-		draw_hud(c, paused, tool, overlay, hover_x, hover_y, hover_ok)
+		draw_hud(c, paused, speed, tool, overlay, hover_x, hover_y, hover_ok)
 		rl.EndDrawing()
 	}
 }
@@ -286,7 +293,7 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	return rl.MAGENTA
 }
 
-draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
+draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	outage := "  OUTAGE" if city.city_outage(c) else ""
 	line1 := fmt.ctprintf(
@@ -302,13 +309,14 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay, hover
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%d/%d/%d %02dh%s  %s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C/I  [ ] tax  space  S/L",
+		"%d/%d/%d %02dh%s  %s %dx  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C/I  [ ] tax  -/=  space  S/L",
 		city.city_year(c),
 		city.city_month(c),
 		city.city_day(c),
 		city.city_hour(c),
 		outage,
 		run,
+		speed,
 		tool,
 		overlay,
 	)

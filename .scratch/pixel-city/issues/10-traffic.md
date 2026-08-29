@@ -4,10 +4,10 @@
 
 **Blocked by:** 07: Health, husks, happiness
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Traffic is per connected road component: grown buildings ÷ road lots (no trips, no cars)
-- [ ] High load nibbles health of grown buildings whose access is that component
-- [ ] Painting more roads on the same component can relieve the nibble
-- [ ] The player can toggle a traffic overlay on roads
-- [ ] Facilities do not count as grown buildings in the load
+- [x] Traffic is per connected road component: grown buildings ÷ road lots (no trips, no cars)
+- [x] High load nibbles health of grown buildings whose access is that component
+- [x] Painting more roads on the same component can relieve the nibble
+- [x] The player can toggle a traffic overlay on roads
+- [x] Facilities do not count as grown buildings in the load

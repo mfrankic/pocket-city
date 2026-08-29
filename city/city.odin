@@ -22,6 +22,7 @@ TAX_HIGH :: 4
 POLLUTION_EMIT :: f32(1)
 POLLUTION_FALLOFF :: f32(0.5)
 POLLUTION_HIGH :: f32(0.2)
+TRAFFIC_HIGH :: f32(1)
 COVERAGE_RANGE :: 4
 LAND_VALUE_HIGH :: f32(2.5)
 
@@ -81,6 +82,7 @@ City :: struct {
 	powered:   [MAP_SIZE * MAP_SIZE]bool,
 	watered:   [MAP_SIZE * MAP_SIZE]bool,
 	pollution: [MAP_SIZE * MAP_SIZE]f32,
+	traffic:   [MAP_SIZE * MAP_SIZE]f32,
 }
 
 city_new :: proc() -> City {
@@ -340,6 +342,10 @@ lot_pollution :: proc(c: City, x, y: int) -> f32 {
 	return c.pollution[y * MAP_SIZE + x]
 }
 
+lot_traffic :: proc(c: City, x, y: int) -> f32 {
+	return c.traffic[y * MAP_SIZE + x]
+}
+
 lot_covered :: proc(c: City, x, y: int, kind: Building_Kind) -> bool {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		id := c.lots[i].building_id
@@ -412,6 +418,7 @@ recompute_supply :: proc(c: ^City) {
 			flood_supply(c, u16(id), &c.watered)
 		}
 	}
+	recompute_traffic(c)
 }
 
 @(private)
@@ -475,6 +482,61 @@ flood_supply :: proc(c: ^City, id: u16, dest: ^[MAP_SIZE * MAP_SIZE]bool) {
 				dest[ni] = true
 				cap -= 1
 			}
+		}
+	}
+}
+
+@(private)
+recompute_traffic :: proc(c: ^City) {
+	c.traffic = {}
+	visited: [MAP_SIZE * MAP_SIZE]bool
+	queue: [MAP_SIZE * MAP_SIZE]int
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for start in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[start].kind != .Road || visited[start] {
+			continue
+		}
+		head, tail := 0, 0
+		visited[start] = true
+		queue[tail] = start
+		tail += 1
+		n_roads := 0
+		n_grown := 0
+		seen: [MAX_BUILDINGS]bool
+		for head < tail {
+			i := queue[head]
+			head += 1
+			n_roads += 1
+			x, y := i % MAP_SIZE, i / MAP_SIZE
+			for n in cardinal {
+				nx, ny := x + n[0], y + n[1]
+				if !in_bounds(nx, ny) {
+					continue
+				}
+				ni := ny * MAP_SIZE + nx
+				if c.lots[ni].kind == .Road {
+					if !visited[ni] {
+						visited[ni] = true
+						queue[tail] = ni
+						tail += 1
+					}
+					continue
+				}
+				id := c.lots[ni].building_id
+				if id == 0 || id > MAX_BUILDINGS {
+					continue
+				}
+				b := c.buildings[id - 1]
+				if !b.present || !is_grown(b.kind) || seen[id - 1] {
+					continue
+				}
+				seen[id - 1] = true
+				n_grown += 1
+			}
+		}
+		load := f32(n_grown) / f32(n_roads)
+		for i in 0 ..< n_roads {
+			c.traffic[queue[i]] = load
 		}
 	}
 }
@@ -626,6 +688,9 @@ apply_health :: proc(c: ^City) {
 			if !lots_supplied(c, u16(id), &c.watered) {
 				delta -= HEALTH_NIBBLE
 			}
+			if building_traffic(c, u16(id)) >= TRAFFIC_HIGH {
+				delta -= HEALTH_NIBBLE
+			}
 		}
 		if unemployed && b.kind == .House {
 			delta -= HEALTH_NIBBLE
@@ -675,6 +740,29 @@ building_pollution :: proc(c: ^City, id: u16) -> f32 {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id == id && c.pollution[i] > worst {
 			worst = c.pollution[i]
+		}
+	}
+	return worst
+}
+
+@(private)
+building_traffic :: proc(c: ^City, id: u16) -> f32 {
+	worst: f32
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id != id {
+			continue
+		}
+		x, y := i % MAP_SIZE, i / MAP_SIZE
+		for n in cardinal {
+			nx, ny := x + n[0], y + n[1]
+			if !in_bounds(nx, ny) {
+				continue
+			}
+			t := c.traffic[ny * MAP_SIZE + nx]
+			if t > worst {
+				worst = t
+			}
 		}
 	}
 	return worst

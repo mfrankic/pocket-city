@@ -2053,3 +2053,127 @@ high_land_value_births_a_2x2_shop :: proc(t: ^testing.T) {
 	expect_building(t, c, x, y, .Shop)
 	testing.expect_value(t, city_jobs(c), 16)
 }
+
+jammed_house_and_shop :: proc(c: ^City) -> (house, shop: [2]int, rx, ry: int, ok: bool) {
+	lx, ly, lake := find_terrain(c^, .Lake)
+	if !lake {
+		return {}, {}, 0, 0, false
+	}
+	tx, ty, grass := find_cardinal_grass(c^, lx, ly)
+	if !grass {
+		return {}, {}, 0, 0, false
+	}
+	if !paint_access_road(c, tx, ty) {
+		return {}, {}, 0, 0, false
+	}
+	if !stamp(c, tx, ty, .Tower) {
+		return {}, {}, 0, 0, false
+	}
+	road_x, road_y, road := find_cardinal_road(c^, tx, ty)
+	if !road {
+		return {}, {}, 0, 0, false
+	}
+	rx, ry = road_x, road_y
+	sx, sy, station_plot := find_empty_cardinal_plot(c^, rx, ry)
+	if !station_plot {
+		return {}, {}, 0, 0, false
+	}
+	if !stamp(c, sx, sy, .Station) {
+		return {}, {}, 0, 0, false
+	}
+	r2x, r2y, extra := find_empty_cardinal_plot(c^, rx, ry)
+	if !extra {
+		return {}, {}, 0, 0, false
+	}
+	if !paint_road(c, r2x, r2y) {
+		return {}, {}, 0, 0, false
+	}
+	hx, hy, house_plot := find_empty_cardinal_plot(c^, rx, ry)
+	if !house_plot {
+		return {}, {}, 0, 0, false
+	}
+	cx, cy, shop_plot := find_empty_cardinal_plot(c^, r2x, r2y)
+	if !shop_plot {
+		return {}, {}, 0, 0, false
+	}
+	paint_zone(c, hx, hy, .Residential)
+	paint_zone(c, cx, cy, .Commercial)
+	tick(c, pick_first)
+	tick(c, pick_first)
+	tick(c, pick_first)
+	return {hx, hy}, {cx, cy}, rx, ry, true
+}
+
+@(test)
+traffic_is_grown_buildings_over_road_lots :: proc(t: ^testing.T) {
+	c := city_new()
+	house, shop, rx, ry, ok := jammed_house_and_shop(&c)
+	testing.expect(t, ok)
+	expect_building(t, c, house[0], house[1], .House)
+	expect_building(t, c, shop[0], shop[1], .Shop)
+	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+	testing.expect(t, paint_road(&c, 0, 0))
+	testing.expect_value(t, lot_traffic(c, 0, 0), f32(0))
+	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+}
+
+@(test)
+jammed_component_nibbles_grown_buildings_not_facilities :: proc(t: ^testing.T) {
+	c := city_new()
+	house, shop, rx, ry, ok := jammed_house_and_shop(&c)
+	testing.expect(t, ok)
+	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	sh, sok := building_health_at(c, shop[0], shop[1])
+	hh, hok := building_health_at(c, house[0], house[1])
+	testing.expect(t, sok && hok)
+	testing.expect(t, sh < 1)
+	testing.expect(t, hh < 1)
+	sx, sy, station := find_building(c, .Station)
+	tx, ty, tower := find_building(c, .Tower)
+	testing.expect(t, station && tower)
+	sth, stok := building_health_at(c, sx, sy)
+	th, tok := building_health_at(c, tx, ty)
+	testing.expect(t, stok && tok)
+	testing.expect_value(t, sth, f32(1))
+	testing.expect_value(t, th, f32(1))
+}
+
+@(test)
+painting_roads_on_the_component_relieves_the_nibble :: proc(t: ^testing.T) {
+	c := city_new()
+	_, shop, rx, ry, ok := jammed_house_and_shop(&c)
+	testing.expect(t, ok)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	sh, sok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, sok)
+	testing.expect(t, sh < 1)
+	testing.expect(t, paint_extra_road_on_component(&c, rx, ry))
+	testing.expect_value(t, lot_traffic(c, rx, ry), f32(2) / f32(3))
+	for _ in 0 ..< 20 {
+		tick(&c, pick_first)
+	}
+	recovered, rok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, rok)
+	testing.expect(t, recovered > sh)
+}
+
+paint_extra_road_on_component :: proc(c: ^City, rx, ry: int) -> bool {
+	load := lot_traffic(c^, rx, ry)
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			if city_lot(c^, x, y).kind != .Road || lot_traffic(c^, x, y) != load {
+				continue
+			}
+			px, py, ok := find_empty_cardinal_plot(c^, x, y)
+			if ok {
+				return paint_road(c, px, py)
+			}
+		}
+	}
+	return false
+}

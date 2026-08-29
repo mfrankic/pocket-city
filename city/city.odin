@@ -343,6 +343,7 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 		}
 		c.money -= FOREST_COST
 		lot.terrain = .Grass
+		recompute_derived(c)
 		return true
 	}
 	return true

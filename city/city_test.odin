@@ -127,6 +127,16 @@ bulldoze_forest_spends_and_turns_to_grass :: proc(t: ^testing.T) {
 }
 
 @(test)
+bulldoze_forest_raises_land_value_without_tick :: proc(t: ^testing.T) {
+	c := city_new()
+	x, y, found := find_terrain(c, .Forest)
+	testing.expect(t, found)
+	before := lot_land_value(c, x, y)
+	testing.expect(t, bulldoze(&c, x, y))
+	testing.expect(t, lot_land_value(c, x, y) > before)
+}
+
+@(test)
 painting_a_road_spends_ten_and_places_it :: proc(t: ^testing.T) {
 	c := city_new()
 	ok := paint_road(&c, 1, 0)

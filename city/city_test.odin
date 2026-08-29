@@ -3254,3 +3254,44 @@ save_then_load_keeps_money_after_maintenance :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_money(loaded), 1989)
 	testing.expect_value(t, city_lot(loaded, 0, 0).kind, Lot_Kind.Road)
 }
+
+@(test)
+empty_city_supply_percents_are_full :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect_value(t, city_power_percent(c), f32(1))
+	testing.expect_value(t, city_water_percent(c), f32(1))
+}
+
+@(test)
+occupied_unpowered_lots_pull_power_percent_down :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Park))
+	testing.expect(t, !lot_powered(c, 1, 0))
+	testing.expect_value(t, city_power_percent(c), f32(0))
+	testing.expect_value(t, city_water_percent(c), f32(0))
+}
+
+@(test)
+power_percent_is_occupied_plots_with_power_over_occupied_plots :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	paint_road(&c, 15, 15)
+	testing.expect(t, stamp(&c, 15, 16, .Park))
+	testing.expect(t, lot_powered(c, 1, 0))
+	testing.expect(t, !lot_powered(c, 15, 16))
+	testing.expect_value(t, city_power_percent(c), f32(0.5))
+	testing.expect_value(t, city_water_percent(c), f32(0))
+}
+
+@(test)
+outage_drops_the_power_percent :: proc(t: ^testing.T) {
+	c := city_new()
+	paint_road(&c, 0, 0)
+	testing.expect(t, stamp(&c, 1, 0, .Station))
+	testing.expect_value(t, city_power_percent(c), f32(1))
+	tick(&c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect_value(t, city_power_percent(c), f32(0))
+}

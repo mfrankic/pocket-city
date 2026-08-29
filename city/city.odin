@@ -779,6 +779,32 @@ city_happiness :: proc(c: City) -> f32 {
 	return sum / f32(n)
 }
 
+city_power_percent :: proc(c: City) -> f32 {
+	return occupied_supply_percent(c, c.powered)
+}
+
+city_water_percent :: proc(c: City) -> f32 {
+	return occupied_supply_percent(c, c.watered)
+}
+
+@(private)
+occupied_supply_percent :: proc(c: City, flags: [MAP_SIZE * MAP_SIZE]bool) -> f32 {
+	n, supplied := 0, 0
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == 0 {
+			continue
+		}
+		n += 1
+		if flags[i] {
+			supplied += 1
+		}
+	}
+	if n == 0 {
+		return 1
+	}
+	return f32(supplied) / f32(n)
+}
+
 @(private)
 shop_jobs :: proc(c: City) -> int {
 	return grown_stat(c, .Shop, SHOP_JOBS)

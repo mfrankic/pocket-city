@@ -297,7 +297,7 @@ draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Ov
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	outage := "  OUTAGE" if city.city_outage(c) else ""
 	line1 := fmt.ctprintf(
-		"$%d  pop %d  jobs %d  R %d  C %d  I %d  tax %d  hap %d",
+		"$%d  pop %d  jobs %d  R %d  C %d  I %d  tax %d  hap %d  pwr %d  wat %d",
 		city.city_money(c),
 		city.city_population(c),
 		city.city_jobs(c),
@@ -306,6 +306,8 @@ draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Ov
 		city.city_industrial_demand(c),
 		city.city_tax(c),
 		int(city.city_happiness(c) * 100),
+		int(city.city_power_percent(c) * 100),
+		int(city.city_water_percent(c) * 100),
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(

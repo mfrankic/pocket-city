@@ -1,4 +1,4 @@
-package hud
+package window
 
 import "core:testing"
 

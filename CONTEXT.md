@@ -96,6 +96,10 @@ _Avoid_: Rotting, vacant, ruined, demolished
 The city-wide average of health on finished buildings. Construction is excluded. HUD and graphs only. It does not nibble health.
 _Avoid_: Mood, approval
 
+**Window**:
+The map (lots, stamps, Overlay coloring) and the HUD on screen. It is not the city.
+_Avoid_: GUI, renderer, view, screen
+
 **HUD**:
 The chrome around the map. It shows city numbers, graphs, the lot under the cursor, and the keys. It is not the map.
 _Avoid_: overlay (overlays color lots), status bar, GUI

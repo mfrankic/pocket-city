@@ -4,13 +4,13 @@
 
 **Blocked by:** 05: Stamp seven facilities; 07: Health, husks, happiness; 12: Month, graphs, outage
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Fire is a per-plot intensity 0–1, not a moving entity
-- [ ] Each month, intensity lingers; with low chance it spreads to a cardinal plot except road, lake, or rock
-- [ ] A building on a plot with intensity > 0 takes a health nibble (not instant zero)
-- [ ] Each month, a small chance ignites one random plot that has a grown building and no Firehouse coverage
-- [ ] Firehouse coverage (square, needs power) decays intensity and blocks new ignition
-- [ ] Intensity 0 means out; the player can toggle a fire overlay
-- [ ] Fire and an outage may happen in the same month
-- [ ] Save/load keeps fire intensity
+- [x] Fire is a per-plot intensity 0–1, not a moving entity
+- [x] Each month, intensity lingers; with low chance it spreads to a cardinal plot except road, lake, or rock
+- [x] A building on a plot with intensity > 0 takes a health nibble (not instant zero)
+- [x] Each month, a small chance ignites one random plot that has a grown building and no Firehouse coverage
+- [x] Firehouse coverage (square, needs power) decays intensity and blocks new ignition
+- [x] Intensity 0 means out; the player can toggle a fire overlay
+- [x] Fire and an outage may happen in the same month
+- [x] Save/load keeps fire intensity

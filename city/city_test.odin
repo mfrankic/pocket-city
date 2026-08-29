@@ -2494,3 +2494,203 @@ save_then_load_keeps_ticks_and_outage :: proc(t: ^testing.T) {
 	testing.expect(t, !lot_powered(loaded, 0, 1))
 	expect_building(t, loaded, 1, 0, .Station)
 }
+
+pick_ignite :: proc(n: int) -> int {
+	if n == FIRE_IGNITE_CHANCE {
+		return n - 1
+	}
+	return 0
+}
+
+advance_month :: proc(c: ^City, pick: Pick) {
+	for c.ticks % MONTH_TICKS != 0 {
+		tick(c, pick_first)
+	}
+	tick(c, pick)
+}
+
+@(test)
+month_may_ignite_a_grown_building_without_firehouse :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	expect_building(t, c, hx, hy, .House)
+	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+	advance_month(&c, pick_ignite)
+	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	testing.expect(t, lot_fire(c, hx, hy) <= 1)
+}
+
+@(test)
+firehouse_coverage_blocks_ignition :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	expect_building(t, c, hx, hy, .House)
+	testing.expect(t, stamp(&c, p[2][0], p[2][1], .Firehouse))
+	testing.expect(t, lot_covered(c, hx, hy, .Firehouse))
+	advance_month(&c, pick_ignite)
+	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+}
+
+@(test)
+fire_lingers_through_a_month_without_firehouse :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite)
+	got := lot_fire(c, hx, hy)
+	testing.expect(t, got > 0)
+	advance_month(&c, pick_first)
+	testing.expect_value(t, lot_fire(c, hx, hy), got)
+}
+
+pick_spread :: proc(n: int) -> int {
+	if n == FIRE_SPREAD_CHANCE {
+		return n - 1
+	}
+	return 0
+}
+
+@(test)
+fire_spreads_to_a_cardinal_plot_except_road_lake_or_rock :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite)
+	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	advance_month(&c, pick_spread)
+	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	spread := false
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := hx + n[0], hy + n[1]
+		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
+			continue
+		}
+		lot := city_lot(c, nx, ny)
+		if lot.kind == .Road || lot.terrain == .Lake || lot.terrain == .Rock {
+			testing.expect_value(t, lot_fire(c, nx, ny), f32(0))
+			continue
+		}
+		if lot_fire(c, nx, ny) > 0 {
+			spread = true
+		}
+	}
+	testing.expect(t, spread)
+}
+
+@(test)
+building_on_fire_takes_a_health_nibble :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite)
+	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	h0, okh := building_health_at(c, hx, hy)
+	testing.expect(t, okh)
+	testing.expect(t, h0 < 1)
+	testing.expect(t, h0 > HEALTH_ABANDONED)
+	tick(&c, pick_first)
+	h1, ok1 := building_health_at(c, hx, hy)
+	testing.expect(t, ok1)
+	testing.expect_value(t, h1, h0 - HEALTH_NIBBLE)
+	testing.expect(t, h1 > 0)
+}
+
+@(test)
+firehouse_coverage_decays_intensity :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite)
+	before := lot_fire(c, hx, hy)
+	testing.expect(t, before > 0)
+	testing.expect(t, stamp(&c, p[2][0], p[2][1], .Firehouse))
+	testing.expect(t, lot_covered(c, hx, hy, .Firehouse))
+	advance_month(&c, pick_first)
+	after := lot_fire(c, hx, hy)
+	testing.expect(t, after < before)
+	testing.expect(t, after > 0)
+	for _ in 0 ..< 8 {
+		if lot_fire(c, hx, hy) == 0 {
+			break
+		}
+		advance_month(&c, pick_first)
+	}
+	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+}
+
+pick_ignite_and_outage :: proc(n: int) -> int {
+	if n == FIRE_IGNITE_CHANCE || n == OUTAGE_CHANCE {
+		return n - 1
+	}
+	return 0
+}
+
+@(test)
+fire_and_outage_may_happen_in_the_same_month :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite_and_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect(t, lot_fire(c, hx, hy) > 0)
+}
+
+@(test)
+save_then_load_keeps_fire_intensity :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	hx, hy := p[0][0], p[0][1]
+	advance_month(&c, pick_ignite)
+	want := lot_fire(c, hx, hy)
+	testing.expect(t, want > 0)
+	path := "city_fire.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, load_ok := city_load(path)
+	testing.expect(t, load_ok)
+	testing.expect_value(t, lot_fire(loaded, hx, hy), want)
+	expect_building(t, loaded, hx, hy, .House)
+}

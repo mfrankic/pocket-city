@@ -32,6 +32,9 @@ MONTHS_PER_YEAR :: 12
 HOURS_PER_DAY :: 24
 GRAPH_MONTHS :: 24
 OUTAGE_CHANCE :: 8
+FIRE_IGNITE_CHANCE :: 11
+FIRE_SPREAD_CHANCE :: 13
+FIRE_DECAY :: f32(0.25)
 
 Lot_Kind :: enum {
 	Plot,
@@ -102,6 +105,7 @@ City :: struct {
 	pollution: [MAP_SIZE * MAP_SIZE]f32,
 	traffic:   [MAP_SIZE * MAP_SIZE]f32,
 	crime:     [MAP_SIZE * MAP_SIZE]f32,
+	fire:      [MAP_SIZE * MAP_SIZE]f32,
 }
 
 city_new :: proc() -> City {
@@ -395,6 +399,10 @@ lot_traffic :: proc(c: City, x, y: int) -> f32 {
 
 lot_crime :: proc(c: City, x, y: int) -> f32 {
 	return c.crime[y * MAP_SIZE + x]
+}
+
+lot_fire :: proc(c: City, x, y: int) -> f32 {
+	return c.fire[y * MAP_SIZE + x]
 }
 
 lot_covered :: proc(c: City, x, y: int, kind: Building_Kind) -> bool {
@@ -755,13 +763,17 @@ city_industrial_demand :: proc(c: City) -> int {
 Pick :: proc(n: int) -> int
 
 tick :: proc(c: ^City, pick: Pick) {
-	if c.ticks % MONTH_TICKS == 0 {
+	month_start := c.ticks % MONTH_TICKS == 0
+	if month_start {
 		sample_graph(c)
 		c.outage = pick(OUTAGE_CHANCE) == OUTAGE_CHANCE - 1
 	}
 	c.ticks += 1
 	recompute_supply(c)
 	recompute_pollution(c)
+	if month_start {
+		apply_fire(c, pick)
+	}
 	apply_health(c)
 	grow_houses := city_residential_demand(c^) > 0
 	grow_shops := city_commercial_demand(c^) > 0
@@ -785,6 +797,94 @@ tick :: proc(c: ^City, pick: Pick) {
 		level_up(c, .Factory, pick)
 	}
 	c.money += c.tax * city_population(c^)
+}
+
+@(private)
+apply_fire :: proc(c: ^City, pick: Pick) {
+	spread_fire(c, pick)
+	decay_fire(c)
+	count := 0
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if fire_ignitable(c^, i) {
+			count += 1
+		}
+	}
+	if count == 0 || pick(FIRE_IGNITE_CHANCE) != FIRE_IGNITE_CHANCE - 1 {
+		return
+	}
+	chosen := pick(count)
+	n := 0
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if fire_ignitable(c^, i) {
+			if n == chosen {
+				c.fire[i] = 1
+				return
+			}
+			n += 1
+		}
+	}
+}
+
+@(private)
+decay_fire :: proc(c: ^City) {
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.fire[i] <= 0 {
+			continue
+		}
+		x, y := i % MAP_SIZE, i / MAP_SIZE
+		if lot_covered(c^, x, y, .Firehouse) {
+			c.fire[i] = max(c.fire[i] - FIRE_DECAY, 0)
+		}
+	}
+}
+
+@(private)
+spread_fire :: proc(c: ^City, pick: Pick) {
+	onto: [MAP_SIZE * MAP_SIZE]bool
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.fire[i] <= 0 {
+			continue
+		}
+		if pick(FIRE_SPREAD_CHANCE) != FIRE_SPREAD_CHANCE - 1 {
+			continue
+		}
+		x, y := i % MAP_SIZE, i / MAP_SIZE
+		targets: [4]int
+		n_targets := 0
+		for n in cardinal {
+			nx, ny := x + n[0], y + n[1]
+			if !in_bounds(nx, ny) {
+				continue
+			}
+			lot := city_lot(c^, nx, ny)
+			if lot.kind == .Road || lot.terrain == .Lake || lot.terrain == .Rock {
+				continue
+			}
+			targets[n_targets] = ny * MAP_SIZE + nx
+			n_targets += 1
+		}
+		if n_targets == 0 {
+			continue
+		}
+		onto[targets[pick(n_targets)]] = true
+	}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if onto[i] {
+			c.fire[i] = 1
+		}
+	}
+}
+
+@(private)
+fire_ignitable :: proc(c: City, i: int) -> bool {
+	id := c.lots[i].building_id
+	if id == 0 || id > MAX_BUILDINGS {
+		return false
+	}
+	b := c.buildings[id - 1]
+	x, y := i % MAP_SIZE, i / MAP_SIZE
+	return b.present && is_grown(b.kind) && !lot_covered(c, x, y, .Firehouse)
 }
 
 @(private)
@@ -835,6 +935,9 @@ apply_health :: proc(c: ^City) {
 		if c.tax >= TAX_HIGH {
 			delta -= HEALTH_NIBBLE
 		}
+		if building_fire(c, u16(id)) > 0 {
+			delta -= HEALTH_NIBBLE
+		}
 		if delta == 0 {
 			delta = HEALTH_REGEN
 		}
@@ -866,6 +969,17 @@ lots_supplied :: proc(c: ^City, id: u16, flags: ^[MAP_SIZE * MAP_SIZE]bool) -> b
 		}
 	}
 	return true
+}
+
+@(private)
+building_fire :: proc(c: ^City, id: u16) -> f32 {
+	worst: f32
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == id && c.fire[i] > worst {
+			worst = c.fire[i]
+		}
+	}
+	return worst
 }
 
 @(private)
@@ -1114,11 +1228,12 @@ has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(7)
+SAVE_VERSION :: u8(8)
 SAVE_HEADER :: 1 + 8 + 8 + 8 + 1 + 2
 LOT_BYTES :: 5
 BUILDING_BYTES :: 6
-SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES
+FIRE_BYTES :: 4
+SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * (LOT_BYTES + FIRE_BYTES)
 
 city_save :: proc(c: City, path: string) -> bool {
 	buf: [SAVE_MAX]u8
@@ -1150,6 +1265,10 @@ city_save :: proc(c: City, path: string) -> bool {
 		put_u16le(buf[i + 3:i + 5], remap[lot.building_id])
 		i += LOT_BYTES
 	}
+	for f in c.fire {
+		put_f32le(buf[i:i + FIRE_BYTES], f)
+		i += FIRE_BYTES
+	}
 	return os.write_entire_file(path, buf[:i]) == nil
 }
 
@@ -1166,7 +1285,8 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	if count > MAX_BUILDINGS {
 		return {}, false
 	}
-	if len(data) != SAVE_HEADER + count * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * LOT_BYTES {
+	if len(data) !=
+	   SAVE_HEADER + count * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * (LOT_BYTES + FIRE_BYTES) {
 		return {}, false
 	}
 	ticks := get_i64le(data[17:25])
@@ -1225,6 +1345,14 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 			refs[id - 1] += 1
 		}
 		i += LOT_BYTES
+	}
+	for j in 0 ..< MAP_SIZE * MAP_SIZE {
+		f := get_f32le(data[i:i + FIRE_BYTES])
+		if f != f || f < 0 || f > 1 {
+			return {}, false
+		}
+		c.fire[j] = f
+		i += FIRE_BYTES
 	}
 	for b in 0 ..< count {
 		if refs[b] == 0 {

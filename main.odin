@@ -38,6 +38,7 @@ Overlay :: enum {
 	Education,
 	Traffic,
 	Crime,
+	Fire,
 }
 
 main :: proc() {
@@ -78,6 +79,7 @@ main :: proc() {
 		if rl.IsKeyPressed(.E) do overlay = .None if overlay == .Education else .Education
 		if rl.IsKeyPressed(.T) do overlay = .None if overlay == .Traffic else .Traffic
 		if rl.IsKeyPressed(.C) do overlay = .None if overlay == .Crime else .Crime
+		if rl.IsKeyPressed(.I) do overlay = .None if overlay == .Fire else .Fire
 		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
 		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
@@ -212,6 +214,9 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	case .Crime:
 		p := clamp(city.lot_crime(c, x, y) / 4, 0, 1)
 		return rl.Color{u8(40 + 160 * p), u8(20 + 20 * p), u8(50 + 80 * p), 255}
+	case .Fire:
+		p := clamp(city.lot_fire(c, x, y), 0, 1)
+		return rl.Color{u8(40 + 200 * p), u8(20), u8(10), 255}
 	case .Land_Value:
 		v := clamp(city.lot_land_value(c, x, y) / 3, 0, 1)
 		return rl.Color{u8(30 + 40 * v), u8(50 + 140 * v), u8(40 + 50 * v), 255}
@@ -282,7 +287,7 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%d/%d/%d %02dh%s  %s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C  [ ] tax  space  S/L",
+		"%d/%d/%d %02dh%s  %s  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C/I  [ ] tax  space  S/L",
 		city.city_year(c),
 		city.city_month(c),
 		city.city_day(c),

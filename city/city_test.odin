@@ -1178,6 +1178,7 @@ unemployment_nibbles_houses_not_shops :: proc(t: ^testing.T) {
 	tick(&c, pick_first)
 	testing.expect_value(t, city_population(c), 8)
 	testing.expect_value(t, city_jobs(c), 4)
+	testing.expect(t, stamp_near(&c, p[2][0], p[2][1], .Police))
 	for _ in 0 ..< 5 {
 		tick(&c, pick_first)
 	}
@@ -2176,4 +2177,162 @@ paint_extra_road_on_component :: proc(c: ^City, rx, ry: int) -> bool {
 		}
 	}
 	return false
+}
+
+@(test)
+crime_is_higher_next_to_grown_buildings_than_far_away :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	near := lot_crime(c, p[0][0], p[0][1])
+	far := lot_crime(c, 20, 20)
+	testing.expect(t, near > far)
+}
+
+@(test)
+unemployment_raises_crime :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	shop := p[1]
+	before := lot_crime(c, shop[0], shop[1])
+	far: [2]int
+	found := false
+	for q in p[2:] {
+		if max(abs(q[0] - shop[0]), abs(q[1] - shop[1])) > 1 &&
+		   max(abs(q[0] - p[0][0]), abs(q[1] - p[0][1])) > 1 {
+			far = q
+			found = true
+			break
+		}
+	}
+	testing.expect(t, found)
+	paint_zone(&c, far[0], far[1], .Residential)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	testing.expect(t, lot_crime(c, shop[0], shop[1]) > before)
+}
+
+@(test)
+police_coverage_lowers_crime :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	sx, sy := p[1][0], p[1][1]
+	before := lot_crime(c, sx, sy)
+	testing.expect(t, before > 0)
+	testing.expect(t, stamp_near(&c, sx, sy, .Police))
+	testing.expect(t, lot_covered(c, sx, sy, .Police))
+	testing.expect(t, lot_crime(c, sx, sy) < before)
+}
+
+@(test)
+unpowered_police_does_not_lower_crime :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	paint_zone(&c, p[1][0], p[1][1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	sx, sy := p[1][0], p[1][1]
+	stx, sty, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(&c, stx, sty))
+	before := lot_crime(c, sx, sy)
+	testing.expect(t, before > 0)
+	c.money = max(c.money, STAMP_COST)
+	stamped := false
+	for py in sy - COVERAGE_RANGE ..= sy + COVERAGE_RANGE {
+		for px in sx - COVERAGE_RANGE ..= sx + COVERAGE_RANGE {
+			if stamp(&c, px, py, .Police) {
+				stamped = true
+				break
+			}
+		}
+		if stamped {
+			break
+		}
+	}
+	testing.expect(t, stamped)
+	testing.expect(t, !lot_covered(c, sx, sy, .Police))
+	testing.expect_value(t, lot_crime(c, sx, sy), before)
+}
+
+@(test)
+crime_nibbles_shops_not_houses :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	house, shop, pair := cardinal_pair(p[:8])
+	testing.expect(t, pair)
+	paint_zone(&c, house[0], house[1], .Residential)
+	paint_zone(&c, shop[0], shop[1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	testing.expect(t, lot_crime(c, shop[0], shop[1]) >= CRIME_HIGH)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	hh, hok := building_health_at(c, house[0], house[1])
+	sh, sok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, hok && sok)
+	testing.expect_value(t, hh, f32(1))
+	testing.expect(t, sh < 1)
+}
+
+@(test)
+crime_lowers_land_value :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	house, shop, pair := cardinal_pair(p[:8])
+	testing.expect(t, pair)
+	paint_zone(&c, house[0], house[1], .Residential)
+	paint_zone(&c, shop[0], shop[1], .Commercial)
+	before := lot_land_value(c, shop[0], shop[1])
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	testing.expect(t, lot_crime(c, shop[0], shop[1]) > 0)
+	testing.expect(t, lot_land_value(c, shop[0], shop[1]) < before)
+}
+
+@(test)
+happiness_is_not_an_input_to_crime :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 8)
+	testing.expect(t, ok)
+	house, shop, pair := cardinal_pair(p[:8])
+	testing.expect(t, pair)
+	paint_zone(&c, house[0], house[1], .Residential)
+	paint_zone(&c, shop[0], shop[1], .Commercial)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	tick(&c, pick_first)
+	crime := lot_crime(c, shop[0], shop[1])
+	hap := city_happiness(c)
+	city_set_tax(&c, TAX_HIGH)
+	for _ in 0 ..< 5 {
+		tick(&c, pick_first)
+	}
+	testing.expect(t, city_happiness(c) < hap)
+	testing.expect_value(t, lot_crime(c, shop[0], shop[1]), crime)
 }

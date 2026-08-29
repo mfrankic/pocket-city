@@ -4,10 +4,10 @@
 
 **Blocked by:** 05: Stamp seven facilities; 07: Health, husks, happiness
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Crime on a plot rises with local density and city unemployment and falls with Police coverage
-- [ ] Crime nibbles shop health only, and lowers land value on those plots
-- [ ] Houses are not crime-nibbled; happiness is not an input to crime
-- [ ] Unpowered Police have no coverage
-- [ ] The player can toggle a crime overlay
+- [x] Crime on a plot rises with local density and city unemployment and falls with Police coverage
+- [x] Crime nibbles shop health only, and lowers land value on those plots
+- [x] Houses are not crime-nibbled; happiness is not an input to crime
+- [x] Unpowered Police have no coverage
+- [x] The player can toggle a crime overlay

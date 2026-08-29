@@ -23,6 +23,8 @@ POLLUTION_EMIT :: f32(1)
 POLLUTION_FALLOFF :: f32(0.5)
 POLLUTION_HIGH :: f32(0.2)
 TRAFFIC_HIGH :: f32(1)
+CRIME_UNEMPLOYED :: f32(1)
+CRIME_HIGH :: f32(2)
 COVERAGE_RANGE :: 4
 LAND_VALUE_HIGH :: f32(2.5)
 
@@ -83,6 +85,7 @@ City :: struct {
 	watered:   [MAP_SIZE * MAP_SIZE]bool,
 	pollution: [MAP_SIZE * MAP_SIZE]f32,
 	traffic:   [MAP_SIZE * MAP_SIZE]f32,
+	crime:     [MAP_SIZE * MAP_SIZE]f32,
 }
 
 city_new :: proc() -> City {
@@ -346,6 +349,10 @@ lot_traffic :: proc(c: City, x, y: int) -> f32 {
 	return c.traffic[y * MAP_SIZE + x]
 }
 
+lot_crime :: proc(c: City, x, y: int) -> f32 {
+	return c.crime[y * MAP_SIZE + x]
+}
+
 lot_covered :: proc(c: City, x, y: int, kind: Building_Kind) -> bool {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		id := c.lots[i].building_id
@@ -399,7 +406,11 @@ lot_land_value :: proc(c: City, x, y: int) -> f32 {
 	if lot_covered(c, x, y, .Park) {
 		v += 1
 	}
-	return v - lot_pollution(c, x, y)
+	v -= lot_pollution(c, x, y)
+	if kind, ok := building_kind_at(c, x, y); ok && kind == .Shop {
+		v -= lot_crime(c, x, y)
+	}
+	return v
 }
 
 @(private)
@@ -419,6 +430,7 @@ recompute_supply :: proc(c: ^City) {
 		}
 	}
 	recompute_traffic(c)
+	recompute_crime(c)
 }
 
 @(private)
@@ -537,6 +549,61 @@ recompute_traffic :: proc(c: ^City) {
 		load := f32(n_grown) / f32(n_roads)
 		for i in 0 ..< n_roads {
 			c.traffic[queue[i]] = load
+		}
+	}
+}
+
+@(private)
+recompute_crime :: proc(c: ^City) {
+	// ponytail: one coverage pass; lot_covered-per-plot was ~100× slower on 64×64
+	covered: [MAP_SIZE * MAP_SIZE]bool
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		id := c.lots[i].building_id
+		if id == 0 || id > MAX_BUILDINGS {
+			continue
+		}
+		b := c.buildings[id - 1]
+		if !b.present || b.kind != .Police || !facility_powered(c^, id) {
+			continue
+		}
+		fx, fy := i % MAP_SIZE, i / MAP_SIZE
+		for y in fy - COVERAGE_RANGE ..= fy + COVERAGE_RANGE {
+			for x in fx - COVERAGE_RANGE ..= fx + COVERAGE_RANGE {
+				if in_bounds(x, y) {
+					covered[y * MAP_SIZE + x] = true
+				}
+			}
+		}
+	}
+	unemployed := city_population(c^) > city_jobs(c^)
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			if covered[y * MAP_SIZE + x] {
+				c.crime[y * MAP_SIZE + x] = 0
+				continue
+			}
+			n := 0
+			for dy in -1 ..= 1 {
+				for dx in -1 ..= 1 {
+					nx, ny := x + dx, y + dy
+					if !in_bounds(nx, ny) {
+						continue
+					}
+					id := c.lots[ny * MAP_SIZE + nx].building_id
+					if id == 0 || id > MAX_BUILDINGS {
+						continue
+					}
+					b := c.buildings[id - 1]
+					if b.present && is_grown(b.kind) {
+						n += 1
+					}
+				}
+			}
+			crime := f32(n)
+			if unemployed {
+				crime += CRIME_UNEMPLOYED
+			}
+			c.crime[y * MAP_SIZE + x] = crime
 		}
 	}
 }
@@ -698,6 +765,9 @@ apply_health :: proc(c: ^City) {
 		if b.kind == .House && building_pollution(c, u16(id)) > POLLUTION_HIGH {
 			delta -= HEALTH_NIBBLE
 		}
+		if b.kind == .Shop && building_crime(c, u16(id)) >= CRIME_HIGH {
+			delta -= HEALTH_NIBBLE
+		}
 		if c.tax >= TAX_HIGH {
 			delta -= HEALTH_NIBBLE
 		}
@@ -740,6 +810,17 @@ building_pollution :: proc(c: ^City, id: u16) -> f32 {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id == id && c.pollution[i] > worst {
 			worst = c.pollution[i]
+		}
+	}
+	return worst
+}
+
+@(private)
+building_crime :: proc(c: ^City, id: u16) -> f32 {
+	worst: f32
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		if c.lots[i].building_id == id && c.crime[i] > worst {
+			worst = c.crime[i]
 		}
 	}
 	return worst

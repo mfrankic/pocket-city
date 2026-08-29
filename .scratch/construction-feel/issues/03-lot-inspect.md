@@ -4,11 +4,15 @@
 
 **Blocked by:** 01: Construction births
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Moving the cursor over a lot updates inspect without painting
-- [ ] Inspect shows terrain, road or plot, zone, and building kind
-- [ ] Inspect shows Construction remaining ticks when unfinished, and level and health when finished
-- [ ] Inspect shows power, water, pollution, land value, traffic, crime, fire, and education on that lot
-- [ ] Cursor on the HUD or off the map does not show a lying lot
-- [ ] Left click still paints with the current tool
+- [x] Moving the cursor over a lot updates inspect without painting
+- [x] Inspect shows terrain, road or plot, zone, and building kind
+- [x] Inspect shows Construction remaining ticks when unfinished, and level and health when finished
+- [x] Inspect shows power, water, pollution, land value, traffic, crime, fire, and education on that lot
+- [x] Cursor on the HUD or off the map does not show a lying lot
+- [x] Left click still paints with the current tool
+
+## Answer
+
+The window maps the cursor to a lot (`hover_lot`) and draws inspect on the HUD from existing city getters. Hover does not paint. Cursor on the HUD or off the map shows no lot. Left click still paints.

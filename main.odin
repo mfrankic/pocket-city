@@ -109,36 +109,34 @@ main :: proc() {
 			cam.target.y -= d.y / cam.zoom
 		}
 
-		if rl.IsMouseButtonDown(.LEFT) && rl.GetMouseY() >= HUD_H {
-			world := rl.GetScreenToWorld2D(rl.GetMousePosition(), cam)
-			lot_x := int(math.floor(world.x / f32(LOT_PX)))
-			lot_y := int(math.floor(world.y / f32(LOT_PX)))
+		hover_x, hover_y, hover_ok := hover_lot(cam)
+		if rl.IsMouseButtonDown(.LEFT) && hover_ok {
 			switch tool {
 			case .Road:
-				city.paint_road(&c, lot_x, lot_y)
+				city.paint_road(&c, hover_x, hover_y)
 			case .Residential:
-				city.paint_zone(&c, lot_x, lot_y, .Residential)
+				city.paint_zone(&c, hover_x, hover_y, .Residential)
 			case .Commercial:
-				city.paint_zone(&c, lot_x, lot_y, .Commercial)
+				city.paint_zone(&c, hover_x, hover_y, .Commercial)
 			case .Industrial:
-				city.paint_zone(&c, lot_x, lot_y, .Industrial)
+				city.paint_zone(&c, hover_x, hover_y, .Industrial)
 			case .Bulldoze:
-				city.bulldoze(&c, lot_x, lot_y)
+				city.bulldoze(&c, hover_x, hover_y)
 			case .Station:
 				size := 2 if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) else 1
-				city.stamp(&c, lot_x, lot_y, .Station, size)
+				city.stamp(&c, hover_x, hover_y, .Station, size)
 			case .Tower:
-				city.stamp(&c, lot_x, lot_y, .Tower)
+				city.stamp(&c, hover_x, hover_y, .Tower)
 			case .Park:
-				city.stamp(&c, lot_x, lot_y, .Park)
+				city.stamp(&c, hover_x, hover_y, .Park)
 			case .School:
-				city.stamp(&c, lot_x, lot_y, .School)
+				city.stamp(&c, hover_x, hover_y, .School)
 			case .Police:
-				city.stamp(&c, lot_x, lot_y, .Police)
+				city.stamp(&c, hover_x, hover_y, .Police)
 			case .Firehouse:
-				city.stamp(&c, lot_x, lot_y, .Firehouse)
+				city.stamp(&c, hover_x, hover_y, .Firehouse)
 			case .Hospital:
-				city.stamp(&c, lot_x, lot_y, .Hospital)
+				city.stamp(&c, hover_x, hover_y, .Hospital)
 			}
 		}
 
@@ -165,13 +163,27 @@ main :: proc() {
 			}
 		}
 		rl.EndMode2D()
-		draw_hud(c, paused, tool, overlay)
+		draw_hud(c, paused, tool, overlay, hover_x, hover_y, hover_ok)
 		rl.EndDrawing()
 	}
 }
 
 pick :: proc(n: int) -> int {
 	return rand.int_max(n)
+}
+
+hover_lot :: proc(cam: rl.Camera2D) -> (x, y: int, ok: bool) {
+	mouse := rl.GetMousePosition()
+	if mouse.y < HUD_H {
+		return 0, 0, false
+	}
+	world := rl.GetScreenToWorld2D(mouse, cam)
+	x = int(math.floor(world.x / f32(LOT_PX)))
+	y = int(math.floor(world.y / f32(LOT_PX)))
+	if x < 0 || y < 0 || x >= city.MAP_SIZE || y >= city.MAP_SIZE {
+		return 0, 0, false
+	}
+	return x, y, true
 }
 
 building_color :: proc(kind: city.Building_Kind) -> rl.Color {
@@ -274,7 +286,7 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	return rl.MAGENTA
 }
 
-draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
+draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	outage := "  OUTAGE" if city.city_outage(c) else ""
 	line1 := fmt.ctprintf(
@@ -302,7 +314,40 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool, overlay: Overlay) {
 	)
 	rl.DrawText(line1, 8, 8, 16, rl.WHITE)
 	rl.DrawText(line2, 8, 32, 14, rl.LIGHTGRAY)
+	if hover_ok {
+		draw_inspect(c, hover_x, hover_y)
+	}
 	draw_graphs(c)
+}
+
+draw_inspect :: proc(c: city.City, x, y: int) {
+	lot := city.city_lot(c, x, y)
+	build := "-"
+	if kind, ok := city.building_kind_at(c, x, y); ok {
+		rem, _ := city.building_construction_remaining_at(c, x, y)
+		if rem > 0 {
+			build = fmt.tprintf("%v Construction %d", kind, rem)
+		} else {
+			level, _ := city.building_level_at(c, x, y)
+			health, _ := city.building_health_at(c, x, y)
+			lvl := fmt.tprintf(" L%d", level) if level >= 1 else ""
+			build = fmt.tprintf("%v%s health %.2f", kind, lvl, health)
+		}
+	}
+	line3 := fmt.ctprintf("%v  %v  %v  %s", lot.terrain, lot.kind, lot.zone, build)
+	line4 := fmt.ctprintf(
+		"P%s W%s  pol %.2f  lv %.2f  tr %.2f  cr %.2f  fire %.2f  edu%s",
+		"+" if city.lot_powered(c, x, y) else "-",
+		"+" if city.lot_watered(c, x, y) else "-",
+		city.lot_pollution(c, x, y),
+		city.lot_land_value(c, x, y),
+		city.lot_traffic(c, x, y),
+		city.lot_crime(c, x, y),
+		city.lot_fire(c, x, y),
+		"+" if city.lot_education(c, x, y) else "-",
+	)
+	rl.DrawText(line3, 8, 50, 12, rl.WHITE)
+	rl.DrawText(line4, 8, 64, 12, rl.WHITE)
 }
 
 Hud_Graph :: enum {

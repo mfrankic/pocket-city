@@ -13,6 +13,8 @@ SHOP_JOBS :: 4
 FACTORY_JOBS :: 4
 TAX_DEFAULT :: 1
 STAMP_COST :: 100
+ROAD_MAINTENANCE :: 1
+FACILITY_MAINTENANCE :: 1
 SUPPLY_CAPACITY :: 32
 HEALTH_ABANDONED :: 0.25
 HEALTH_STRUGGLING :: 0.6
@@ -859,6 +861,23 @@ tick :: proc(c: ^City, pick: Pick) {
 	}
 	c.money += c.tax * city_population(c^)
 	advance_construction(c)
+	apply_maintenance(c)
+}
+
+@(private)
+apply_maintenance :: proc(c: ^City) {
+	maintenance := 0
+	for lot in c.lots {
+		if lot.kind == .Road {
+			maintenance += ROAD_MAINTENANCE
+		}
+	}
+	for b in c.buildings {
+		if b.present && is_facility(b.kind) {
+			maintenance += FACILITY_MAINTENANCE
+		}
+	}
+	c.money = max(c.money - maintenance, 0)
 }
 
 @(private)

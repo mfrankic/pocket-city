@@ -4,11 +4,15 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Each running tick charges Maintenance on each road lot and each facility
-- [ ] Grown buildings are not billed; income is still tax times population in the same tick, then Maintenance, then money floors at 0
-- [ ] Zero money still blocks spending and does not end the game
-- [ ] Pause charges no Maintenance
-- [ ] Starting money and rates still let the player paint a first neighborhood
-- [ ] Save/load keeps money after Maintenance
+- [x] Each running tick charges Maintenance on each road lot and each facility
+- [x] Grown buildings are not billed; income is still tax times population in the same tick, then Maintenance, then money floors at 0
+- [x] Zero money still blocks spending and does not end the game
+- [x] Pause charges no Maintenance
+- [x] Starting money and rates still let the player paint a first neighborhood
+- [x] Save/load keeps money after Maintenance
+
+## Answer
+
+Each running `tick` adds tax × population, then charges 1 per Road lot and 1 per Facility, then floors Money at 0. Grown buildings are not billed. Pause still means the window does not call `tick`. Starting money still covers a first neighborhood. Save already stored money; no format bump.

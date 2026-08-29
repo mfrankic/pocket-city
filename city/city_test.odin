@@ -389,9 +389,10 @@ tick_collects_tax_on_population :: proc(t: ^testing.T) {
 	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	await_finished(&c, p[0][0], p[0][1])
 	money := city_money(c)
+	maintenance := maintenance_cost(c)
 	tick(&c, pick_first)
 	testing.expect_value(t, city_population(c), 4)
-	testing.expect_value(t, city_money(c), money + 4)
+	testing.expect_value(t, city_money(c), money + 4 - maintenance)
 }
 
 @(test)
@@ -405,8 +406,9 @@ player_sets_tax_and_tick_income_uses_it :: proc(t: ^testing.T) {
 	paint_zone(&c, p[0][0], p[0][1], .Residential)
 	await_finished(&c, p[0][0], p[0][1])
 	money := city_money(c)
+	maintenance := maintenance_cost(c)
 	tick(&c, pick_first)
-	testing.expect_value(t, city_money(c), money + 12)
+	testing.expect_value(t, city_money(c), money + 12 - maintenance)
 }
 
 @(test)
@@ -2464,8 +2466,9 @@ income_arrives_every_tick_inside_a_month :: proc(t: ^testing.T) {
 	await_finished(&c, p[0][0], p[0][1])
 	testing.expect_value(t, city_population(c), 4)
 	money := city_money(c)
+	maintenance := maintenance_cost(c)
 	tick(&c, pick_first)
-	testing.expect_value(t, city_money(c), money + 4)
+	testing.expect_value(t, city_money(c), money + 4 - maintenance)
 }
 
 @(test)
@@ -3131,4 +3134,123 @@ load_old_version_leaves_city_alone :: proc(t: ^testing.T) {
 	_, ok := city_load(path)
 	testing.expect(t, !ok)
 	testing.expect_value(t, city_lot(c, 0, 0).kind, Lot_Kind.Road)
+}
+
+maintenance_cost :: proc(c: City) -> int {
+	roads := 0
+	facilities := 0
+	seen: [MAX_BUILDINGS]bool
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			lot := city_lot(c, x, y)
+			if lot.kind == .Road {
+				roads += 1
+			}
+			id := lot.building_id
+			if id == 0 || seen[id - 1] {
+				continue
+			}
+			seen[id - 1] = true
+			kind, ok := building_kind_at(c, x, y)
+			if !ok {
+				continue
+			}
+			switch kind {
+			case .House, .Shop, .Factory:
+			case .Station, .Tower, .Park, .School, .Police, .Firehouse, .Hospital:
+				facilities += 1
+			}
+		}
+	}
+	return roads * ROAD_MAINTENANCE + facilities * FACILITY_MAINTENANCE
+}
+
+@(test)
+tick_charges_maintenance_on_each_road_lot :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 1, 0))
+	testing.expect_value(t, city_money(c), 1990)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 1989)
+}
+
+@(test)
+tick_charges_maintenance_on_each_facility :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 0, 0))
+	testing.expect(t, stamp(&c, 1, 0, .Park))
+	testing.expect_value(t, city_money(c), 1890)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 1888)
+}
+
+@(test)
+two_by_two_station_pays_one_facility_maintenance :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 0, 0))
+	testing.expect(t, stamp(&c, 1, 0, .Station, 2))
+	testing.expect_value(t, city_money(c), 1890)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 1888)
+}
+
+@(test)
+grown_buildings_are_not_billed :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	await_finished(&c, p[0][0], p[0][1])
+	testing.expect_value(t, city_population(c), 4)
+	maintenance := maintenance_cost(c)
+	money := city_money(c)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), money + 4 - maintenance)
+}
+
+@(test)
+income_then_maintenance_then_money_floors_at_zero :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 1)
+	testing.expect(t, ok)
+	paint_zone(&c, p[0][0], p[0][1], .Residential)
+	await_finished(&c, p[0][0], p[0][1])
+	testing.expect_value(t, city_population(c), 4)
+	testing.expect(t, maintenance_cost(c) > 4)
+	c.money = 0
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 0)
+	testing.expect(t, !paint_road(&c, 63, 63))
+	testing.expect_value(t, city_lot(c, 63, 63).kind, Lot_Kind.Plot)
+	tick(&c, pick_first)
+	testing.expect_value(t, city_population(c), 4)
+	testing.expect_value(t, city_money(c), 0)
+}
+
+@(test)
+starting_money_and_rates_let_a_first_neighborhood_be_painted :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 2)
+	testing.expect(t, ok)
+	testing.expect(t, paint_zone(&c, p[0][0], p[0][1], .Residential))
+	for _ in 0 ..< MONTH_TICKS {
+		tick(&c, pick_first)
+	}
+	testing.expect(t, city_money(c) > 0)
+	testing.expect(t, paint_zone(&c, p[1][0], p[1][1], .Commercial))
+}
+
+@(test)
+save_then_load_keeps_money_after_maintenance :: proc(t: ^testing.T) {
+	c := city_new()
+	testing.expect(t, paint_road(&c, 0, 0))
+	tick(&c, pick_first)
+	testing.expect_value(t, city_money(c), 1989)
+	path := "city_maintenance.save"
+	defer os.remove(path)
+	testing.expect(t, city_save(c, path))
+	loaded, ok := city_load(path)
+	testing.expect(t, ok)
+	testing.expect_value(t, city_money(loaded), 1989)
+	testing.expect_value(t, city_lot(loaded, 0, 0).kind, Lot_Kind.Road)
 }

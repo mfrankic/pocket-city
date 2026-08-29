@@ -100,12 +100,17 @@ City :: struct {
 	graph_len: int,
 	outage:    bool,
 	buildings: [MAX_BUILDINGS]Building,
-	powered:   [MAP_SIZE * MAP_SIZE]bool,
-	watered:   [MAP_SIZE * MAP_SIZE]bool,
-	pollution: [MAP_SIZE * MAP_SIZE]f32,
-	traffic:   [MAP_SIZE * MAP_SIZE]f32,
-	crime:     [MAP_SIZE * MAP_SIZE]f32,
-	fire:      [MAP_SIZE * MAP_SIZE]f32,
+	powered:           [MAP_SIZE * MAP_SIZE]bool,
+	watered:           [MAP_SIZE * MAP_SIZE]bool,
+	covered_park:      [MAP_SIZE * MAP_SIZE]bool,
+	covered_school:    [MAP_SIZE * MAP_SIZE]bool,
+	covered_police:    [MAP_SIZE * MAP_SIZE]bool,
+	covered_firehouse: [MAP_SIZE * MAP_SIZE]bool,
+	covered_hospital:  [MAP_SIZE * MAP_SIZE]bool,
+	pollution:         [MAP_SIZE * MAP_SIZE]f32,
+	traffic:           [MAP_SIZE * MAP_SIZE]f32,
+	crime:             [MAP_SIZE * MAP_SIZE]f32,
+	fire:              [MAP_SIZE * MAP_SIZE]f32,
 }
 
 city_new :: proc() -> City {
@@ -406,24 +411,39 @@ lot_fire :: proc(c: City, x, y: int) -> f32 {
 }
 
 lot_covered :: proc(c: City, x, y: int, kind: Building_Kind) -> bool {
-	for i in 0 ..< MAP_SIZE * MAP_SIZE {
-		id := c.lots[i].building_id
-		if id == 0 || id > MAX_BUILDINGS {
-			continue
-		}
-		b := c.buildings[id - 1]
-		if !b.present || b.kind != kind {
-			continue
-		}
-		if coverage_needs_power(kind) && !facility_powered(c, id) {
-			continue
-		}
-		fx, fy := i % MAP_SIZE, i / MAP_SIZE
-		if max(abs(x - fx), abs(y - fy)) <= COVERAGE_RANGE {
-			return true
-		}
+	c := c
+	return coverage_at(&c, x, y, kind)
+}
+
+@(private)
+coverage_at :: proc(c: ^City, x, y: int, kind: Building_Kind) -> bool {
+	if !in_bounds(x, y) {
+		return false
 	}
-	return false
+	dest, ok := coverage_grid(c, kind)
+	if !ok {
+		return false
+	}
+	return dest[y * MAP_SIZE + x]
+}
+
+@(private)
+coverage_grid :: proc(c: ^City, kind: Building_Kind) -> (dest: ^[MAP_SIZE * MAP_SIZE]bool, ok: bool) {
+	switch kind {
+	case .Park:
+		return &c.covered_park, true
+	case .School:
+		return &c.covered_school, true
+	case .Police:
+		return &c.covered_police, true
+	case .Firehouse:
+		return &c.covered_firehouse, true
+	case .Hospital:
+		return &c.covered_hospital, true
+	case .House, .Shop, .Factory, .Station, .Tower:
+		return nil, false
+	}
+	return nil, false
 }
 
 @(private)
@@ -438,10 +458,12 @@ coverage_needs_power :: proc(kind: Building_Kind) -> bool {
 }
 
 lot_education :: proc(c: City, x, y: int) -> bool {
-	return lot_covered(c, x, y, .School)
+	c := c
+	return coverage_at(&c, x, y, .School)
 }
 
 lot_land_value :: proc(c: City, x, y: int) -> f32 {
+	c := c
 	lot := city_lot(c, x, y)
 	v: f32
 	switch lot.terrain {
@@ -455,7 +477,7 @@ lot_land_value :: proc(c: City, x, y: int) -> f32 {
 	if lot.kind == .Road || has_road_access(c, x, y) {
 		v += 1
 	}
-	if lot_covered(c, x, y, .Park) {
+	if coverage_at(&c, x, y, .Park) {
 		v += 1
 	}
 	v -= lot_pollution(c, x, y)
@@ -481,8 +503,47 @@ recompute_supply :: proc(c: ^City) {
 			flood_supply(c, u16(id), &c.watered)
 		}
 	}
+	recompute_coverage(c)
 	recompute_traffic(c)
 	recompute_crime(c)
+}
+
+@(private)
+recompute_coverage :: proc(c: ^City) {
+	c.covered_park = {}
+	c.covered_school = {}
+	c.covered_police = {}
+	c.covered_firehouse = {}
+	c.covered_hospital = {}
+	for i in 0 ..< MAP_SIZE * MAP_SIZE {
+		id := c.lots[i].building_id
+		if id == 0 || id > MAX_BUILDINGS {
+			continue
+		}
+		b := c.buildings[id - 1]
+		if !b.present {
+			continue
+		}
+		dest, ok := coverage_grid(c, b.kind)
+		if !ok {
+			continue
+		}
+		if coverage_needs_power(b.kind) && !facility_powered(c^, id) {
+			continue
+		}
+		stamp_coverage_square(dest, i % MAP_SIZE, i / MAP_SIZE)
+	}
+}
+
+@(private)
+stamp_coverage_square :: proc(dest: ^[MAP_SIZE * MAP_SIZE]bool, fx, fy: int) {
+	for y in fy - COVERAGE_RANGE ..= fy + COVERAGE_RANGE {
+		for x in fx - COVERAGE_RANGE ..= fx + COVERAGE_RANGE {
+			if in_bounds(x, y) {
+				dest[y * MAP_SIZE + x] = true
+			}
+		}
+	}
 }
 
 @(private)
@@ -607,30 +668,10 @@ recompute_traffic :: proc(c: ^City) {
 
 @(private)
 recompute_crime :: proc(c: ^City) {
-	// ponytail: one coverage pass; lot_covered-per-plot was ~100× slower on 64×64
-	covered: [MAP_SIZE * MAP_SIZE]bool
-	for i in 0 ..< MAP_SIZE * MAP_SIZE {
-		id := c.lots[i].building_id
-		if id == 0 || id > MAX_BUILDINGS {
-			continue
-		}
-		b := c.buildings[id - 1]
-		if !b.present || b.kind != .Police || !facility_powered(c^, id) {
-			continue
-		}
-		fx, fy := i % MAP_SIZE, i / MAP_SIZE
-		for y in fy - COVERAGE_RANGE ..= fy + COVERAGE_RANGE {
-			for x in fx - COVERAGE_RANGE ..= fx + COVERAGE_RANGE {
-				if in_bounds(x, y) {
-					covered[y * MAP_SIZE + x] = true
-				}
-			}
-		}
-	}
 	unemployed := city_population(c^) > city_jobs(c^)
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			if covered[y * MAP_SIZE + x] {
+			if coverage_at(c, x, y, .Police) {
 				c.crime[y * MAP_SIZE + x] = 0
 				continue
 			}
@@ -805,7 +846,7 @@ apply_fire :: proc(c: ^City, pick: Pick) {
 	decay_fire(c)
 	count := 0
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
-		if fire_ignitable(c^, i) {
+		if fire_ignitable(c, i) {
 			count += 1
 		}
 	}
@@ -815,7 +856,7 @@ apply_fire :: proc(c: ^City, pick: Pick) {
 	chosen := pick(count)
 	n := 0
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
-		if fire_ignitable(c^, i) {
+		if fire_ignitable(c, i) {
 			if n == chosen {
 				c.fire[i] = 1
 				return
@@ -832,7 +873,7 @@ decay_fire :: proc(c: ^City) {
 			continue
 		}
 		x, y := i % MAP_SIZE, i / MAP_SIZE
-		if lot_covered(c^, x, y, .Firehouse) {
+		if coverage_at(c, x, y, .Firehouse) {
 			c.fire[i] = max(c.fire[i] - FIRE_DECAY, 0)
 		}
 	}
@@ -877,14 +918,14 @@ spread_fire :: proc(c: ^City, pick: Pick) {
 }
 
 @(private)
-fire_ignitable :: proc(c: City, i: int) -> bool {
+fire_ignitable :: proc(c: ^City, i: int) -> bool {
 	id := c.lots[i].building_id
 	if id == 0 || id > MAX_BUILDINGS {
 		return false
 	}
 	b := c.buildings[id - 1]
 	x, y := i % MAP_SIZE, i / MAP_SIZE
-	return b.present && is_grown(b.kind) && !lot_covered(c, x, y, .Firehouse)
+	return b.present && is_grown(b.kind) && !coverage_at(c, x, y, .Firehouse)
 }
 
 @(private)
@@ -1184,13 +1225,14 @@ building_has_road :: proc(c: City, id: u16) -> bool {
 
 @(private)
 building_all_covered :: proc(c: City, id: u16, kind: Building_Kind) -> bool {
+	c := c
 	found := false
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id != id {
 			continue
 		}
 		found = true
-		if !lot_covered(c, i % MAP_SIZE, i / MAP_SIZE, kind) {
+		if !coverage_at(&c, i % MAP_SIZE, i / MAP_SIZE, kind) {
 			return false
 		}
 	}

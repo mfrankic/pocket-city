@@ -15,4 +15,4 @@
 
 ## Answer
 
-The window maps the cursor to a lot (`hover_lot`) and draws inspect on the HUD from existing city getters. Hover does not paint. Cursor on the HUD or off the map shows no lot. Left click still paints.
+The window maps the cursor to a lot (`hover_lot`) and draws inspect on the HUD from existing city getters. Hover does not paint. Cursor on the HUD or off the map shows no lot. Left click still paints. When finished, Inspect names Abandoned or Struggling if that band applies; it does not print the Health number.

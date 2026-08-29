@@ -29,7 +29,7 @@ A zone. It grows a Factory, not population.
 _Avoid_: Manufacturing, dirty commercial
 
 **Building**:
-The occupant of a rectangle of plots (1×1 or 2×2). Either a House, Shop, Factory, or Facility. Size is chosen at birth from land value and does not change. Those plots all belong to that building. The stamp may be irregular pixels inside the rectangle. It stays until the player demolishes it or it is Abandoned.
+The occupant of a rectangle of plots (1×1 or 2×2). Either a House, Shop, Factory, or Facility. Size is chosen at birth from land value and does not change. The rectangle starts at the northwest plot. Those plots all belong to that building. The stamp may be irregular pixels inside the rectangle. It stays until the player demolishes it or it is Abandoned.
 _Avoid_: Structure, agent, blob
 
 **House**:

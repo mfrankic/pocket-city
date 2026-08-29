@@ -1239,6 +1239,8 @@ missing_power_abandons_a_house_into_a_husk :: proc(t: ^testing.T) {
 			testing.expect_value(t, lot.zone, Zone.Residential)
 			testing.expect(t, lot.building_id != 0)
 			expect_building(t, c, p[0][0], p[0][1], .House)
+			testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
+			testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
 			abandoned = true
 			break
 		}
@@ -1269,6 +1271,8 @@ struggling_house_still_counts_population :: proc(t: ^testing.T) {
 		if h < HEALTH_STRUGGLING && h > HEALTH_ABANDONED {
 			testing.expect_value(t, city_population(c), 4)
 			testing.expect_value(t, city_jobs(c), 4)
+			testing.expect(t, building_struggling_at(c, p[0][0], p[0][1]))
+			testing.expect(t, !building_abandoned_at(c, p[0][0], p[0][1]))
 			struggling = true
 			break
 		}
@@ -3465,4 +3469,64 @@ outage_drops_the_power_percent :: proc(t: ^testing.T) {
 	tick(c, pick_outage)
 	testing.expect(t, city_outage(c))
 	testing.expect_value(t, city_power_percent(c), f32(0))
+}
+
+@(test)
+empty_lot_is_not_northwest :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	_, ok := building_northwest_at(c, 0, 0)
+	testing.expect(t, !ok)
+	testing.expect(t, !building_abandoned_at(c, 0, 0))
+	testing.expect(t, !building_struggling_at(c, 0, 0))
+}
+
+@(test)
+park_northwest_is_1x1_at_its_plot :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	paint_road(c, 0, 0)
+	testing.expect(t, stamp(c, 1, 0, .Park))
+	size, ok := building_northwest_at(c, 1, 0)
+	testing.expect(t, ok)
+	testing.expect_value(t, size, 1)
+	_, neighbor := building_northwest_at(c, 2, 0)
+	testing.expect(t, !neighbor)
+	testing.expect(t, !building_abandoned_at(c, 1, 0))
+	testing.expect(t, !building_struggling_at(c, 1, 0))
+}
+
+@(test)
+station_2x2_northwest_is_only_that_plot :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	paint_road(c, 0, 0)
+	testing.expect(t, stamp(c, 1, 0, .Station, 2))
+	size, ok := building_northwest_at(c, 1, 0)
+	testing.expect(t, ok)
+	testing.expect_value(t, size, 2)
+	_, east := building_northwest_at(c, 2, 0)
+	testing.expect(t, !east)
+	_, south := building_northwest_at(c, 1, 1)
+	testing.expect(t, !south)
+	_, southeast := building_northwest_at(c, 2, 1)
+	testing.expect(t, !southeast)
+}
+
+@(test)
+construction_is_not_abandoned :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 1)
+	testing.expect(t, ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	tick(c, pick_first)
+	rem, rok := building_construction_remaining_at(c, p[0][0], p[0][1])
+	testing.expect(t, rok)
+	testing.expect(t, rem > 0)
+	size, nw := building_northwest_at(c, p[0][0], p[0][1])
+	testing.expect(t, nw)
+	testing.expect_value(t, size, 1)
+	testing.expect(t, !building_abandoned_at(c, p[0][0], p[0][1]))
+	testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
 }

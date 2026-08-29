@@ -16,7 +16,9 @@ STAMP_COST :: 100
 ROAD_MAINTENANCE :: 1
 FACILITY_MAINTENANCE :: 1
 SUPPLY_CAPACITY :: 32
+@(private)
 HEALTH_ABANDONED :: 0.25
+@(private)
 HEALTH_STRUGGLING :: 0.6
 HEALTH_NIBBLE :: 0.05
 HEALTH_REGEN :: 0.02
@@ -180,6 +182,45 @@ building_level_at :: proc(c: ^City, x, y: int) -> (level: u8, ok: bool) {
 building_construction_remaining_at :: proc(c: ^City, x, y: int) -> (remaining: u8, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.remaining, found
+}
+
+building_northwest_at :: proc(c: ^City, x, y: int) -> (size: int, ok: bool) {
+	id := city_lot(c, x, y).building_id
+	if id == 0 {
+		return 0, false
+	}
+	if x > 0 && city_lot(c, x - 1, y).building_id == id {
+		return 0, false
+	}
+	if y > 0 && city_lot(c, x, y - 1).building_id == id {
+		return 0, false
+	}
+	size = 1
+	if x + 1 < MAP_SIZE && y + 1 < MAP_SIZE {
+		if city_lot(c, x + 1, y).building_id == id && city_lot(c, x, y + 1).building_id == id {
+			size = 2
+		}
+	}
+	return size, true
+}
+
+@(private)
+finished_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
+	b, ok = building_at(c, x, y)
+	if !ok || b.remaining != 0 {
+		return {}, false
+	}
+	return b, true
+}
+
+building_abandoned_at :: proc(c: ^City, x, y: int) -> bool {
+	b, ok := finished_at(c, x, y)
+	return ok && b.health <= HEALTH_ABANDONED
+}
+
+building_struggling_at :: proc(c: ^City, x, y: int) -> bool {
+	b, ok := finished_at(c, x, y)
+	return ok && b.health > HEALTH_ABANDONED && b.health < HEALTH_STRUGGLING
 }
 
 @(private)

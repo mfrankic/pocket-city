@@ -195,27 +195,6 @@ CONSTRUCTION_STAMP :: [16]u16 {
 }
 
 @(private)
-stamp_footprint :: proc(c: ^city.City, x, y: int) -> (size: int, ok: bool) {
-	id := city.city_lot(c, x, y).building_id
-	if id == 0 {
-		return 0, false
-	}
-	if x > 0 && city.city_lot(c, x - 1, y).building_id == id {
-		return 0, false
-	}
-	if y > 0 && city.city_lot(c, x, y - 1).building_id == id {
-		return 0, false
-	}
-	size = 1
-	if x + 1 < city.MAP_SIZE && y + 1 < city.MAP_SIZE {
-		if city.city_lot(c, x + 1, y).building_id == id && city.city_lot(c, x, y + 1).building_id == id {
-			size = 2
-		}
-	}
-	return size, true
-}
-
-@(private)
 draw_stamp :: proc(ox, oy, scale: i32, mask: [16]u16, col: rl.Color) {
 	for row in 0 ..< 16 {
 		bits := mask[row]
@@ -228,6 +207,17 @@ draw_stamp :: proc(ox, oy, scale: i32, mask: [16]u16, col: rl.Color) {
 }
 
 @(private)
+band_tint :: proc(c: ^city.City, x, y: int, col: rl.Color) -> (out: rl.Color, label: cstring) {
+	if city.building_abandoned_at(c, x, y) {
+		return rl.Color{90, 85, 80, 255}, "Abandoned"
+	}
+	if city.building_struggling_at(c, x, y) {
+		return rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}, "Struggling"
+	}
+	return col, ""
+}
+
+@(private)
 stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask: [16]u16, col: rl.Color) {
 	stamps := STAMP
 	col = building_color(kind)
@@ -235,14 +225,7 @@ stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask
 	if rem, rok := city.building_construction_remaining_at(c, x, y); rok && rem > 0 {
 		return CONSTRUCTION_STAMP, rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
 	}
-	if h, hok := city.building_health_at(c, x, y); hok {
-		if h <= city.HEALTH_ABANDONED {
-			return mask, rl.Color{90, 85, 80, 255}
-		}
-		if h < city.HEALTH_STRUGGLING {
-			return mask, rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}
-		}
-	}
+	col, _ = band_tint(c, x, y, col)
 	return mask, col
 }
 
@@ -250,8 +233,8 @@ stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask
 draw_stamps :: proc(c: ^city.City) {
 	for y in 0 ..< city.MAP_SIZE {
 		for x in 0 ..< city.MAP_SIZE {
-			size, origin := stamp_footprint(c, x, y)
-			if !origin {
+			size, nw := city.building_northwest_at(c, x, y)
+			if !nw {
 				continue
 			}
 			kind, kok := city.building_kind_at(c, x, y)
@@ -416,11 +399,13 @@ draw_inspect :: proc(c: ^city.City, x, y: int) {
 			hud_line(ix, &iy, fmt.ctprintf("Construction %d", rem))
 		} else {
 			level, _ := city.building_level_at(c, x, y)
-			health, _ := city.building_health_at(c, x, y)
 			if level >= 1 {
 				hud_line(ix, &iy, fmt.ctprintf("Level %d", level))
 			}
-			hud_line(ix, &iy, fmt.ctprintf("Health %.2f", health))
+			_, label := band_tint(c, x, y, rl.WHITE)
+			if label != "" {
+				hud_line(ix, &iy, label)
+			}
 		}
 	}
 	hud_line(ix, &iy, fmt.ctprintf("Power %s", "Yes" if city.lot_powered(c, x, y) else "No"))

@@ -4,13 +4,13 @@
 
 **Blocked by:** 05: Stamp seven facilities; 07: Health, husks, happiness; 08: Pollution belt
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] High land value births a 2×2 rectangle when four empty same-zone plots exist and the footprint touches a road; otherwise 1×1
-- [ ] Size is frozen; level-up does not grow the rectangle
-- [ ] Each tick at most one level-up per grown kind; abandoned buildings never level
-- [ ] Level 2 house requires School coverage on its plots; level 3 requires Hospital coverage
-- [ ] School/Hospital/Police/Firehouse coverage is a square of lots and is none without power; Park coverage does not need power and raises land value
-- [ ] Population and jobs scale as base × level × plots in the footprint
-- [ ] The player can toggle a land value overlay and an education overlay
-- [ ] Save/load keeps level and footprint
+- [x] High land value births a 2×2 rectangle when four empty same-zone plots exist and the footprint touches a road; otherwise 1×1
+- [x] Size is frozen; level-up does not grow the rectangle
+- [x] Each tick at most one level-up per grown kind; abandoned buildings never level
+- [x] Level 2 house requires School coverage on its plots; level 3 requires Hospital coverage
+- [x] School/Hospital/Police/Firehouse coverage is a square of lots and is none without power; Park coverage does not need power and raises land value
+- [x] Population and jobs scale as base × level × plots in the footprint
+- [x] The player can toggle a land value overlay and an education overlay
+- [x] Save/load keeps level and footprint

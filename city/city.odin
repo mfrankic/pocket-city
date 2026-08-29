@@ -229,7 +229,7 @@ paint_road :: proc(c: ^City, x, y: int) -> bool {
 		kind    = .Road,
 		terrain = lot.terrain,
 	}
-	recompute_supply(c)
+	recompute_derived(c)
 	return true
 }
 
@@ -277,7 +277,7 @@ stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
 			lot.zone = .None
 		}
 	}
-	recompute_supply(c)
+	recompute_derived(c)
 	return true
 }
 
@@ -314,7 +314,7 @@ paint_zone :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 		remove_building(c, lot.building_id)
 	}
 	lot.zone = zone
-	recompute_supply(c)
+	recompute_derived(c)
 	return true
 }
 
@@ -327,12 +327,12 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 		lot^ = Lot {
 			terrain = lot.terrain,
 		}
-		recompute_supply(c)
+		recompute_derived(c)
 		return true
 	}
 	if lot.building_id != 0 {
 		remove_building(c, lot.building_id)
-		recompute_supply(c)
+		recompute_derived(c)
 		return true
 	}
 	if lot.terrain == .Forest {
@@ -488,7 +488,7 @@ lot_land_value :: proc(c: City, x, y: int) -> f32 {
 }
 
 @(private)
-recompute_supply :: proc(c: ^City) {
+recompute_derived :: proc(c: ^City) {
 	c.powered = {}
 	c.watered = {}
 	for id in 1 ..= MAX_BUILDINGS {
@@ -506,6 +506,7 @@ recompute_supply :: proc(c: ^City) {
 	recompute_coverage(c)
 	recompute_traffic(c)
 	recompute_crime(c)
+	recompute_pollution(c)
 }
 
 @(private)
@@ -810,8 +811,7 @@ tick :: proc(c: ^City, pick: Pick) {
 		c.outage = pick(OUTAGE_CHANCE) == OUTAGE_CHANCE - 1
 	}
 	c.ticks += 1
-	recompute_supply(c)
-	recompute_pollution(c)
+	recompute_derived(c)
 	if month_start {
 		apply_fire(c, pick)
 	}
@@ -1401,8 +1401,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 			return {}, false
 		}
 	}
-	recompute_supply(&c)
-	recompute_pollution(&c)
+	recompute_derived(&c)
 	return c, true
 }
 

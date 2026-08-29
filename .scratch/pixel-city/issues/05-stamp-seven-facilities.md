@@ -4,12 +4,12 @@
 
 **Blocked by:** 02: Buildings are records; 03: Industrial, factories, three demands
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Tools exist for all seven facilities; all are stampable from the start (money is the gate)
-- [ ] Stamp requires an empty plot (or a 2×2 of empty plots for a 2×2 Station), in bounds, with cardinal road access
-- [ ] Stamp on a zoned plot clears the zone; cannot stamp a road, lake, or rock; forest must be grass first
-- [ ] A Tower is refused unless a cardinal neighbor is lake
-- [ ] A Station may occupy a 2×2 rectangle; bulldozing any lot of it removes the whole facility
-- [ ] Grown buildings still dribble onto remaining empty zoned plots
-- [ ] Save/load keeps facilities and footprints
+- [x] Tools exist for all seven facilities; all are stampable from the start (money is the gate)
+- [x] Stamp requires an empty plot (or a 2×2 of empty plots for a 2×2 Station), in bounds, with cardinal road access
+- [x] Stamp on a zoned plot clears the zone; cannot stamp a road, lake, or rock; forest must be grass first
+- [x] A Tower is refused unless a cardinal neighbor is lake
+- [x] A Station may occupy a 2×2 rectangle; bulldozing any lot of it removes the whole facility
+- [x] Grown buildings still dribble onto remaining empty zoned plots
+- [x] Save/load keeps facilities and footprints

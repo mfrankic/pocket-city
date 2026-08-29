@@ -12,6 +12,7 @@ HOUSE_POPULATION :: 4
 SHOP_JOBS :: 4
 FACTORY_JOBS :: 4
 TAX_DEFAULT :: 1
+STAMP_COST :: 100
 
 Lot_Kind :: enum {
 	Plot,
@@ -36,6 +37,13 @@ Building_Kind :: enum u8 {
 	House,
 	Shop,
 	Factory,
+	Station,
+	Tower,
+	Park,
+	School,
+	Police,
+	Firehouse,
+	Hospital,
 }
 
 Building :: struct {
@@ -158,6 +166,64 @@ paint_road :: proc(c: ^City, x, y: int) -> bool {
 		terrain = lot.terrain,
 	}
 	return true
+}
+
+stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
+	if !is_facility(kind) {
+		return false
+	}
+	if size != 1 && (size != 2 || kind != .Station) {
+		return false
+	}
+	access := false
+	for dy in 0 ..< size {
+		for dx in 0 ..< size {
+			px, py := x + dx, y + dy
+			if !in_bounds(px, py) {
+				return false
+			}
+			lot := city_lot(c^, px, py)
+			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+				return false
+			}
+			if has_road_access(c^, px, py) {
+				access = true
+			}
+		}
+	}
+	if !access {
+		return false
+	}
+	if kind == .Tower && !has_lake_neighbor(c^, x, y) {
+		return false
+	}
+	if c.money < STAMP_COST {
+		return false
+	}
+	id := alloc_building(c, kind)
+	if id == 0 {
+		return false
+	}
+	c.money -= STAMP_COST
+	for dy in 0 ..< size {
+		for dx in 0 ..< size {
+			lot := &c.lots[(y + dy) * MAP_SIZE + (x + dx)]
+			lot.building_id = id
+			lot.zone = .None
+		}
+	}
+	return true
+}
+
+@(private)
+is_facility :: proc(kind: Building_Kind) -> bool {
+	switch kind {
+	case .House, .Shop, .Factory:
+		return false
+	case .Station, .Tower, .Park, .School, .Police, .Firehouse, .Hospital:
+		return true
+	}
+	return false
 }
 
 paint_zone :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
@@ -342,6 +408,21 @@ has_road_access :: proc(c: City, x, y: int) -> bool {
 	return false
 }
 
+@(private)
+has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
+	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for n in cardinal {
+		nx, ny := x + n[0], y + n[1]
+		if !in_bounds(nx, ny) {
+			continue
+		}
+		if city_lot(c, nx, ny).terrain == .Lake {
+			return true
+		}
+	}
+	return false
+}
+
 SAVE_PATH :: "pocket-city.save"
 SAVE_VERSION :: u8(4)
 SAVE_HEADER :: 1 + 8 + 8 + 2
@@ -397,7 +478,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 	c.tax = int(get_i64le(data[9:17]))
 	i := SAVE_HEADER
 	for b in 0 ..< count {
-		if data[i] > u8(Building_Kind.Factory) {
+		if data[i] >= u8(len(Building_Kind)) {
 			return {}, false
 		}
 		c.buildings[b] = Building {

@@ -18,6 +18,13 @@ Tool :: enum {
 	Commercial,
 	Industrial,
 	Bulldoze,
+	Station,
+	Tower,
+	Park,
+	School,
+	Police,
+	Firehouse,
+	Hospital,
 }
 
 main :: proc() {
@@ -43,6 +50,13 @@ main :: proc() {
 		if rl.IsKeyPressed(.THREE) do tool = .Commercial
 		if rl.IsKeyPressed(.FOUR) do tool = .Industrial
 		if rl.IsKeyPressed(.FIVE) do tool = .Bulldoze
+		if rl.IsKeyPressed(.SIX) do tool = .Station
+		if rl.IsKeyPressed(.SEVEN) do tool = .Tower
+		if rl.IsKeyPressed(.EIGHT) do tool = .Park
+		if rl.IsKeyPressed(.NINE) do tool = .School
+		if rl.IsKeyPressed(.ZERO) do tool = .Police
+		if rl.IsKeyPressed(.F) do tool = .Firehouse
+		if rl.IsKeyPressed(.H) do tool = .Hospital
 		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
 		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.SPACE) do paused = !paused
@@ -87,6 +101,21 @@ main :: proc() {
 				city.paint_zone(&c, lot_x, lot_y, .Industrial)
 			case .Bulldoze:
 				city.bulldoze(&c, lot_x, lot_y)
+			case .Station:
+				size := 2 if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) else 1
+				city.stamp(&c, lot_x, lot_y, .Station, size)
+			case .Tower:
+				city.stamp(&c, lot_x, lot_y, .Tower)
+			case .Park:
+				city.stamp(&c, lot_x, lot_y, .Park)
+			case .School:
+				city.stamp(&c, lot_x, lot_y, .School)
+			case .Police:
+				city.stamp(&c, lot_x, lot_y, .Police)
+			case .Firehouse:
+				city.stamp(&c, lot_x, lot_y, .Firehouse)
+			case .Hospital:
+				city.stamp(&c, lot_x, lot_y, .Hospital)
 			}
 		}
 
@@ -135,6 +164,20 @@ lot_color :: proc(c: city.City, x, y: int) -> rl.Color {
 			return rl.BLUE
 		case .Factory:
 			return rl.Color{200, 160, 40, 255}
+		case .Station:
+			return rl.Color{220, 200, 80, 255}
+		case .Tower:
+			return rl.Color{70, 130, 200, 255}
+		case .Park:
+			return rl.Color{80, 170, 70, 255}
+		case .School:
+			return rl.Color{180, 140, 60, 255}
+		case .Police:
+			return rl.Color{60, 80, 180, 255}
+		case .Firehouse:
+			return rl.Color{200, 70, 50, 255}
+		case .Hospital:
+			return rl.WHITE
 		}
 	}
 	switch lot.zone {
@@ -173,7 +216,7 @@ draw_hud :: proc(c: city.City, paused: bool, tool: Tool) {
 	)
 	run := "PAUSED" if paused else "RUNNING"
 	line2 := fmt.ctprintf(
-		"%s   %v    1-5 tools  [ ] tax  space pause  S save  L load  wheel zoom  RMB pan",
+		"%s  %v  1-5 paint  6-0 F H stamp  shift 2x2  [ ] tax  space  S/L  wheel  RMB",
 		run,
 		tool,
 	)

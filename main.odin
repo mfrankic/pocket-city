@@ -4,15 +4,14 @@ import "core:fmt"
 import "core:math"
 import "core:math/rand"
 import city "./city"
+import hud "./hud"
 import rl "vendor:raylib"
 
 LOT_PX :: 16
-HUD_H :: 80
-WIN_W :: 960
-WIN_H :: 640
 TICK_DT :: 0.25
-GRAPH_X :: 740
-GRAPH_W :: 208
+HUD_FONT :: 18
+HUD_LINE :: 22
+GRAPH_ROW :: 44
 
 Tool :: enum {
 	Road,
@@ -42,7 +41,7 @@ Overlay :: enum {
 }
 
 main :: proc() {
-	rl.InitWindow(WIN_W, WIN_H, "Pocket City")
+	rl.InitWindow(hud.WIN_W, hud.WIN_H, "Pocket City")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 
@@ -56,7 +55,7 @@ main :: proc() {
 	cam := rl.Camera2D {
 		zoom   = 1,
 		target = {f32(city.MAP_SIZE * LOT_PX) / 2, f32(city.MAP_SIZE * LOT_PX) / 2},
-		offset = {f32(WIN_W) / 2, f32(HUD_H) + f32(WIN_H - HUD_H) / 2},
+		offset = {f32(hud.LEFT_W) + f32(hud.MAP_W) / 2, f32(hud.MAP_H) / 2},
 	}
 
 	for !rl.WindowShouldClose() {
@@ -181,7 +180,7 @@ pick :: proc(n: int) -> int {
 
 hover_lot :: proc(cam: rl.Camera2D) -> (x, y: int, ok: bool) {
 	mouse := rl.GetMousePosition()
-	if mouse.y < HUD_H {
+	if hud.on_hud(mouse.x, mouse.y) {
 		return 0, 0, false
 	}
 	world := rl.GetScreenToWorld2D(mouse, cam)
@@ -424,71 +423,99 @@ lot_color :: proc(c: ^city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	return ground_color(c, x, y)
 }
 
+overlay_label :: proc(o: Overlay) -> string {
+	switch o {
+	case .None:
+		return "None"
+	case .Power:
+		return "Power"
+	case .Water:
+		return "Water"
+	case .Pollution:
+		return "Pollution"
+	case .Land_Value:
+		return "Land value"
+	case .Education:
+		return "Education"
+	case .Traffic:
+		return "Traffic"
+	case .Crime:
+		return "Crime"
+	case .Fire:
+		return "Fire"
+	}
+	return "?"
+}
+
+hud_line :: proc(x: i32, y: ^i32, text: cstring, col := rl.WHITE) {
+	rl.DrawText(text, x, y^, HUD_FONT, col)
+	y^ += HUD_LINE
+}
+
 draw_hud :: proc(c: ^city.City, paused: bool, speed: int, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
-	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
-	outage := "  OUTAGE" if city.city_outage(c) else ""
-	line1 := fmt.ctprintf(
-		"$%d  pop %d  jobs %d  R %d  C %d  I %d  tax %d  hap %d  pwr %d  wat %d",
-		city.city_money(c),
-		city.city_population(c),
-		city.city_jobs(c),
-		city.city_residential_demand(c),
-		city.city_commercial_demand(c),
-		city.city_industrial_demand(c),
-		city.city_tax(c),
-		int(city.city_happiness(c) * 100),
-		int(city.city_power_percent(c) * 100),
-		int(city.city_water_percent(c) * 100),
-	)
-	run := "PAUSED" if paused else "RUNNING"
-	line2 := fmt.ctprintf(
-		"%d/%d/%d %02dh%s  %s %dx  %v  overlay %v  1-5 paint  6-0 F H stamp  P/W/O/V/E/T/C/I  [ ] tax  -/=  space  S/L",
-		city.city_year(c),
-		city.city_month(c),
-		city.city_day(c),
-		city.city_hour(c),
-		outage,
-		run,
-		speed,
-		tool,
-		overlay,
-	)
-	rl.DrawText(line1, 8, 8, 16, rl.WHITE)
-	rl.DrawText(line2, 8, 32, 14, rl.LIGHTGRAY)
+	rl.DrawRectangle(0, 0, hud.LEFT_W, hud.MAP_H, rl.BLACK)
+	rl.DrawRectangle(i32(hud.LEFT_W + hud.MAP_W), 0, hud.INSPECT_W, hud.MAP_H, rl.BLACK)
+	rl.DrawRectangle(0, hud.MAP_H, hud.WIN_W, hud.KEYS_H, rl.BLACK)
+
+	x: i32 = 8
+	y: i32 = 8
+	hud_line(x, &y, fmt.ctprintf("Money %d", city.city_money(c)))
+	hud_line(x, &y, fmt.ctprintf("Population %d", city.city_population(c)))
+	hud_line(x, &y, fmt.ctprintf("Jobs %d", city.city_jobs(c)))
+	hud_line(x, &y, "Demand")
+	hud_line(x, &y, fmt.ctprintf("R %d  C %d  I %d", city.city_residential_demand(c), city.city_commercial_demand(c), city.city_industrial_demand(c)))
+	hud_line(x, &y, fmt.ctprintf("Tax %d", city.city_tax(c)))
+	hud_line(x, &y, fmt.ctprintf("Happiness %d", int(city.city_happiness(c) * 100)))
+	hud_line(x, &y, fmt.ctprintf("Power %d", int(city.city_power_percent(c) * 100)))
+	hud_line(x, &y, fmt.ctprintf("Water %d", int(city.city_water_percent(c) * 100)))
+	hud_line(x, &y, fmt.ctprintf("%d/%d/%d %02dh", city.city_year(c), city.city_month(c), city.city_day(c), city.city_hour(c)))
+	run := "Paused" if paused else "Running"
+	hud_line(x, &y, fmt.ctprintf("%s %dx", run, speed))
+	hud_line(x, &y, fmt.ctprintf("Tool %v", tool))
+	hud_line(x, &y, fmt.ctprintf("Overlay %s", overlay_label(overlay)))
+
+	draw_graphs(c, 8, hud.MAP_H - (4 * GRAPH_ROW + 8), hud.LEFT_W - 16)
 	if hover_ok {
 		draw_inspect(c, hover_x, hover_y)
 	}
-	draw_graphs(c)
+	rl.DrawText(
+		"1-5 paint  6-0 F H stamp  P W O V E T C I overlay  [ ] tax  -/= speed  space pause  S/L save",
+		8,
+		hud.MAP_H + 8,
+		HUD_FONT,
+		rl.LIGHTGRAY,
+	)
 }
 
 draw_inspect :: proc(c: ^city.City, x, y: int) {
 	lot := city.city_lot(c, x, y)
-	build := "-"
+	ix: i32 = i32(hud.LEFT_W + hud.MAP_W) + 8
+	iy: i32 = 8
+	hud_line(ix, &iy, fmt.ctprintf("Terrain %v", lot.terrain))
+	hud_line(ix, &iy, fmt.ctprintf("%v", lot.kind))
+	hud_line(ix, &iy, fmt.ctprintf("Zone %v", lot.zone))
 	if kind, ok := city.building_kind_at(c, x, y); ok {
+		hud_line(ix, &iy, fmt.ctprintf("%v", kind))
 		rem, _ := city.building_construction_remaining_at(c, x, y)
 		if rem > 0 {
-			build = fmt.tprintf("%v Construction %d", kind, rem)
+			hud_line(ix, &iy, fmt.ctprintf("Construction %d", rem))
 		} else {
 			level, _ := city.building_level_at(c, x, y)
 			health, _ := city.building_health_at(c, x, y)
-			lvl := fmt.tprintf(" L%d", level) if level >= 1 else ""
-			build = fmt.tprintf("%v%s health %.2f", kind, lvl, health)
+			if level >= 1 {
+				hud_line(ix, &iy, fmt.ctprintf("Level %d", level))
+			}
+			hud_line(ix, &iy, fmt.ctprintf("Health %.2f", health))
 		}
 	}
-	line3 := fmt.ctprintf("%v  %v  %v  %s", lot.terrain, lot.kind, lot.zone, build)
-	line4 := fmt.ctprintf(
-		"P%s W%s  pol %.2f  lv %.2f  tr %.2f  cr %.2f  fire %.2f  edu%s",
-		"+" if city.lot_powered(c, x, y) else "-",
-		"+" if city.lot_watered(c, x, y) else "-",
-		city.lot_pollution(c, x, y),
-		city.lot_land_value(c, x, y),
-		city.lot_traffic(c, x, y),
-		city.lot_crime(c, x, y),
-		city.lot_fire(c, x, y),
-		"+" if city.lot_education(c, x, y) else "-",
-	)
-	rl.DrawText(line3, 8, 50, 12, rl.WHITE)
-	rl.DrawText(line4, 8, 64, 12, rl.WHITE)
+	hud_line(ix, &iy, fmt.ctprintf("Power %s", "Yes" if city.lot_powered(c, x, y) else "No"))
+	hud_line(ix, &iy, fmt.ctprintf("Water %s", "Yes" if city.lot_watered(c, x, y) else "No"))
+	hud_line(ix, &iy, fmt.ctprintf("Pollution %.2f", city.lot_pollution(c, x, y)))
+	hud_line(ix, &iy, fmt.ctprintf("Land value %.2f", city.lot_land_value(c, x, y)))
+	hud_line(ix, &iy, fmt.ctprintf("Traffic %.2f", city.lot_traffic(c, x, y)))
+	hud_line(ix, &iy, fmt.ctprintf("Crime %.2f", city.lot_crime(c, x, y)))
+	hud_line(ix, &iy, fmt.ctprintf("Fire %.2f", city.lot_fire(c, x, y)))
+	hud_line(ix, &iy, fmt.ctprintf("Education %s", "Yes" if city.lot_education(c, x, y) else "No"))
 }
 
 Hud_Graph :: enum {
@@ -515,13 +542,13 @@ graph_value :: proc(p: city.Graph_Point, g: Hud_Graph) -> f32 {
 graph_label :: proc(g: Hud_Graph) -> cstring {
 	switch g {
 	case .Population:
-		return "P"
+		return "Population"
 	case .Jobs:
-		return "J"
+		return "Jobs"
 	case .Money:
-		return "$"
+		return "Money"
 	case .Happiness:
-		return "H"
+		return "Happiness"
 	}
 	return "?"
 }
@@ -540,13 +567,12 @@ graph_color :: proc(g: Hud_Graph) -> rl.Color {
 	return rl.WHITE
 }
 
-draw_graphs :: proc(c: ^city.City) {
+draw_graphs :: proc(c: ^city.City, x, y, w: i32) {
 	n := city.city_graph_len(c)
-	row_h: i32 = 16
 	for g in Hud_Graph {
 		row := i32(g)
-		y := 8 + row * row_h
-		rl.DrawText(graph_label(g), GRAPH_X, y, 10, graph_color(g))
+		gy := y + row * GRAPH_ROW
+		rl.DrawText(graph_label(g), x, gy, 14, graph_color(g))
 		if n == 0 {
 			continue
 		}
@@ -554,13 +580,13 @@ draw_graphs :: proc(c: ^city.City) {
 		for i in 0 ..< n {
 			hi = max(hi, graph_value(city.city_graph_at(c, i), g))
 		}
-		x0: i32 = GRAPH_X + 12
-		w: i32 = GRAPH_W - 16
-		h: i32 = row_h - 4
+		x0 := x
+		line_y := gy + 16
+		h: i32 = 22
 		col := graph_color(g)
 		if n == 1 {
 			p := graph_value(city.city_graph_at(c, 0), g) / hi
-			rl.DrawPixel(x0, y + h - i32(p * f32(h)), col)
+			rl.DrawPixel(x0, line_y + h - i32(p * f32(h)), col)
 			continue
 		}
 		for i in 1 ..< n {
@@ -568,8 +594,8 @@ draw_graphs :: proc(c: ^city.City) {
 			b := graph_value(city.city_graph_at(c, i), g) / hi
 			x1 := x0 + i32(f32(w) * f32(i - 1) / f32(n - 1))
 			x2 := x0 + i32(f32(w) * f32(i) / f32(n - 1))
-			y1 := y + h - i32(a * f32(h))
-			y2 := y + h - i32(b * f32(h))
+			y1 := line_y + h - i32(a * f32(h))
+			y2 := line_y + h - i32(b * f32(h))
 			rl.DrawLine(x1, y1, x2, y2, col)
 		}
 	}

@@ -96,6 +96,22 @@ _Avoid_: Rotting, vacant, ruined, demolished
 The city-wide average of health on finished buildings. Construction is excluded. HUD and graphs only. It does not nibble health.
 _Avoid_: Mood, approval
 
+**HUD**:
+The chrome around the map. It shows city numbers, graphs, the lot under the cursor, and the keys. It is not the map.
+_Avoid_: overlay (overlays color lots), status bar, GUI
+
+**Graph**:
+A month-sampled history of Population, Jobs, Money, or Happiness. It is not the live HUD number.
+_Avoid_: chart, sparkline, plot
+
+**Inspect**:
+The HUD region that shows the lot under the cursor. When the cursor is on other HUD chrome or off the map, it shows no lot.
+_Avoid_: tooltip, popup, separate inspect window
+
+**Overlay**:
+A coloring of the map by one per-plot number or flag. It is not the HUD.
+_Avoid_: filter, layer, vision, HUD overlay
+
 **Tax**:
 A city-wide rate the player sets. Income is tax times population. Maintenance is not tax.
 _Avoid_: Tariff, three rates, slider (the rate is the thing)

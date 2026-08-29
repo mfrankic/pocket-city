@@ -69,10 +69,11 @@ Building_Kind :: enum u8 {
 }
 
 Building :: struct {
-	kind:    Building_Kind,
-	present: bool,
-	health:  f32,
-	level:   u8,
+	kind:      Building_Kind,
+	present:   bool,
+	health:    f32,
+	level:     u8,
+	remaining: u8,
 }
 
 Graph_Point :: struct {
@@ -175,15 +176,22 @@ building_level_at :: proc(c: City, x, y: int) -> (level: u8, ok: bool) {
 	return b.level, found
 }
 
+building_construction_remaining_at :: proc(c: City, x, y: int) -> (remaining: u8, ok: bool) {
+	b, found := building_at(c, x, y)
+	return b.remaining, found
+}
+
 @(private)
 alloc_building :: proc(c: ^City, kind: Building_Kind) -> u16 {
 	for i in 0 ..< MAX_BUILDINGS {
 		if !c.buildings[i].present {
+			grown := is_grown(kind)
 			c.buildings[i] = Building {
-				kind    = kind,
-				present = true,
-				health  = 1,
-				level   = 1 if is_grown(kind) else 0,
+				kind      = kind,
+				present   = true,
+				health    = 0 if grown else 1,
+				level     = 0,
+				remaining = MONTH_TICKS if grown else 0,
 			}
 			return u16(i + 1)
 		}
@@ -758,7 +766,7 @@ city_happiness :: proc(c: City) -> f32 {
 	n := 0
 	sum: f32
 	for b in c.buildings {
-		if b.present {
+		if b.present && b.remaining == 0 {
 			sum += b.health
 			n += 1
 		}
@@ -850,6 +858,21 @@ tick :: proc(c: ^City, pick: Pick) {
 		level_up(c, .Factory, pick)
 	}
 	c.money += c.tax * city_population(c^)
+	advance_construction(c)
+}
+
+@(private)
+advance_construction :: proc(c: ^City) {
+	for &b in c.buildings {
+		if !b.present || b.remaining == 0 {
+			continue
+		}
+		b.remaining -= 1
+		if b.remaining == 0 {
+			b.level = 1
+			b.health = 1
+		}
+	}
 }
 
 @(private)
@@ -961,7 +984,7 @@ apply_health :: proc(c: ^City) {
 	unemployed := city_population(c^) > city_jobs(c^)
 	for id in 1 ..= MAX_BUILDINGS {
 		b := &c.buildings[id - 1]
-		if !b.present {
+		if !b.present || b.remaining > 0 {
 			continue
 		}
 		delta: f32
@@ -1000,7 +1023,7 @@ apply_health :: proc(c: ^City) {
 
 @(private)
 producing :: proc(b: Building) -> bool {
-	return b.present && b.health > HEALTH_ABANDONED
+	return b.present && b.remaining == 0 && b.health > HEALTH_ABANDONED
 }
 
 @(private)
@@ -1282,10 +1305,10 @@ has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
 }
 
 SAVE_PATH :: "pocket-city.save"
-SAVE_VERSION :: u8(8)
+SAVE_VERSION :: u8(9)
 SAVE_HEADER :: 1 + 8 + 8 + 8 + 1 + 2
 LOT_BYTES :: 5
-BUILDING_BYTES :: 6
+BUILDING_BYTES :: 7
 FIRE_BYTES :: 4
 SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * (LOT_BYTES + FIRE_BYTES)
 
@@ -1309,6 +1332,7 @@ city_save :: proc(c: City, path: string) -> bool {
 		buf[i] = u8(b.kind)
 		put_f32le(buf[i + 1:i + 5], b.health)
 		buf[i + 5] = b.level
+		buf[i + 6] = b.remaining
 		i += BUILDING_BYTES
 	}
 	put_u16le(buf[26:28], n)
@@ -1365,7 +1389,15 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		}
 		kind := Building_Kind(data[i])
 		level := data[i + 5]
-		if is_grown(kind) {
+		remaining := data[i + 6]
+		if remaining > MONTH_TICKS {
+			return {}, false
+		}
+		if remaining > 0 {
+			if !is_grown(kind) || level != 0 || h != 0 {
+				return {}, false
+			}
+		} else if is_grown(kind) {
 			if level < 1 || level > 3 {
 				return {}, false
 			}
@@ -1373,10 +1405,11 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 			return {}, false
 		}
 		c.buildings[b] = Building {
-			kind    = kind,
-			present = true,
-			health  = h,
-			level   = level,
+			kind      = kind,
+			present   = true,
+			health    = h,
+			level     = level,
+			remaining = remaining,
 		}
 		i += BUILDING_BYTES
 	}

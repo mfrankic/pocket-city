@@ -239,6 +239,9 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	}
 	if kind, ok := city.building_kind_at(c, x, y); ok {
 		col := building_color(kind)
+		if rem, rok := city.building_construction_remaining_at(c, x, y); rok && rem > 0 {
+			return rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
+		}
 		if h, ok := city.building_health_at(c, x, y); ok {
 			if h <= city.HEALTH_ABANDONED {
 				return rl.Color{90, 85, 80, 255}

@@ -117,13 +117,12 @@ City :: struct {
 	fire:              [MAP_SIZE * MAP_SIZE]f32,
 }
 
-city_new :: proc() -> City {
-	c := City {
-		money = STARTING_MONEY,
-		tax   = TAX_DEFAULT,
-	}
-	generate_terrain(&c)
-	recompute_derived(&c)
+city_new :: proc() -> ^City {
+	c := new(City)
+	c.money = STARTING_MONEY
+	c.tax = TAX_DEFAULT
+	generate_terrain(c)
+	recompute_derived(c)
 	return c
 }
 
@@ -146,12 +145,12 @@ fill_terrain :: proc(c: ^City, x0, y0, w, h: int, terrain: Terrain) {
 	}
 }
 
-city_lot :: proc(c: City, x, y: int) -> Lot {
+city_lot :: proc(c: ^City, x, y: int) -> Lot {
 	return c.lots[y * MAP_SIZE + x]
 }
 
 @(private)
-building_at :: proc(c: City, x, y: int) -> (b: Building, ok: bool) {
+building_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
 	id := city_lot(c, x, y).building_id
 	if id == 0 || id > MAX_BUILDINGS {
 		return {}, false
@@ -163,22 +162,22 @@ building_at :: proc(c: City, x, y: int) -> (b: Building, ok: bool) {
 	return b, true
 }
 
-building_kind_at :: proc(c: City, x, y: int) -> (kind: Building_Kind, ok: bool) {
+building_kind_at :: proc(c: ^City, x, y: int) -> (kind: Building_Kind, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.kind, found
 }
 
-building_health_at :: proc(c: City, x, y: int) -> (health: f32, ok: bool) {
+building_health_at :: proc(c: ^City, x, y: int) -> (health: f32, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.health, found
 }
 
-building_level_at :: proc(c: City, x, y: int) -> (level: u8, ok: bool) {
+building_level_at :: proc(c: ^City, x, y: int) -> (level: u8, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.level, found
 }
 
-building_construction_remaining_at :: proc(c: City, x, y: int) -> (remaining: u8, ok: bool) {
+building_construction_remaining_at :: proc(c: ^City, x, y: int) -> (remaining: u8, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.remaining, found
 }
@@ -259,11 +258,11 @@ stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
 			if !in_bounds(px, py) {
 				return false
 			}
-			lot := city_lot(c^, px, py)
+			lot := city_lot(c, px, py)
 			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
 				return false
 			}
-			if has_road_access(c^, px, py) {
+			if has_road_access(c, px, py) {
 				access = true
 			}
 		}
@@ -271,7 +270,7 @@ stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
 	if !access {
 		return false
 	}
-	if kind == .Tower && !has_lake_neighbor(c^, x, y) {
+	if kind == .Tower && !has_lake_neighbor(c, x, y) {
 		return false
 	}
 	if c.money < STAMP_COST {
@@ -359,39 +358,39 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 	return true
 }
 
-city_money :: proc(c: City) -> int {
+city_money :: proc(c: ^City) -> int {
 	return c.money
 }
 
-city_tax :: proc(c: City) -> int {
+city_tax :: proc(c: ^City) -> int {
 	return c.tax
 }
 
-city_year :: proc(c: City) -> int {
+city_year :: proc(c: ^City) -> int {
 	return c.ticks / (MONTH_TICKS * MONTHS_PER_YEAR) + 1
 }
 
-city_month :: proc(c: City) -> int {
+city_month :: proc(c: ^City) -> int {
 	return c.ticks / MONTH_TICKS % MONTHS_PER_YEAR + 1
 }
 
-city_day :: proc(c: City) -> int {
+city_day :: proc(c: ^City) -> int {
 	return c.ticks % MONTH_TICKS + 1
 }
 
-city_hour :: proc(c: City) -> int {
+city_hour :: proc(c: ^City) -> int {
 	return c.ticks * HOURS_PER_DAY / MONTH_TICKS % HOURS_PER_DAY
 }
 
-city_graph_len :: proc(c: City) -> int {
+city_graph_len :: proc(c: ^City) -> int {
 	return c.graph_len
 }
 
-city_graph_at :: proc(c: City, i: int) -> Graph_Point {
+city_graph_at :: proc(c: ^City, i: int) -> Graph_Point {
 	return c.graph[i]
 }
 
-city_outage :: proc(c: City) -> bool {
+city_outage :: proc(c: ^City) -> bool {
 	return c.outage
 }
 
@@ -399,33 +398,32 @@ city_set_tax :: proc(c: ^City, tax: int) {
 	c.tax = max(tax, 0)
 }
 
-lot_powered :: proc(c: City, x, y: int) -> bool {
+lot_powered :: proc(c: ^City, x, y: int) -> bool {
 	return c.powered[y * MAP_SIZE + x]
 }
 
-lot_watered :: proc(c: City, x, y: int) -> bool {
+lot_watered :: proc(c: ^City, x, y: int) -> bool {
 	return c.watered[y * MAP_SIZE + x]
 }
 
-lot_pollution :: proc(c: City, x, y: int) -> f32 {
+lot_pollution :: proc(c: ^City, x, y: int) -> f32 {
 	return c.pollution[y * MAP_SIZE + x]
 }
 
-lot_traffic :: proc(c: City, x, y: int) -> f32 {
+lot_traffic :: proc(c: ^City, x, y: int) -> f32 {
 	return c.traffic[y * MAP_SIZE + x]
 }
 
-lot_crime :: proc(c: City, x, y: int) -> f32 {
+lot_crime :: proc(c: ^City, x, y: int) -> f32 {
 	return c.crime[y * MAP_SIZE + x]
 }
 
-lot_fire :: proc(c: City, x, y: int) -> f32 {
+lot_fire :: proc(c: ^City, x, y: int) -> f32 {
 	return c.fire[y * MAP_SIZE + x]
 }
 
-lot_covered :: proc(c: City, x, y: int, kind: Building_Kind) -> bool {
-	c := c
-	return coverage_at(&c, x, y, kind)
+lot_covered :: proc(c: ^City, x, y: int, kind: Building_Kind) -> bool {
+	return coverage_at(c, x, y, kind)
 }
 
 @(private)
@@ -470,12 +468,11 @@ coverage_needs_power :: proc(kind: Building_Kind) -> bool {
 	return false
 }
 
-lot_education :: proc(c: City, x, y: int) -> bool {
-	c := c
-	return coverage_at(&c, x, y, .School)
+lot_education :: proc(c: ^City, x, y: int) -> bool {
+	return coverage_at(c, x, y, .School)
 }
 
-lot_land_value :: proc(c: City, x, y: int) -> f32 {
+lot_land_value :: proc(c: ^City, x, y: int) -> f32 {
 	return c.land_value[y * MAP_SIZE + x]
 }
 
@@ -491,7 +488,7 @@ recompute_derived :: proc(c: ^City) {
 	}
 	for id in 1 ..= MAX_BUILDINGS {
 		b := c.buildings[id - 1]
-		if b.present && b.kind == .Tower && facility_powered(c^, u16(id)) {
+		if b.present && b.kind == .Tower && facility_powered(c, u16(id)) {
 			flood_supply(c, u16(id), &c.watered)
 		}
 	}
@@ -522,7 +519,7 @@ recompute_coverage :: proc(c: ^City) {
 		if !ok {
 			continue
 		}
-		if coverage_needs_power(b.kind) && !facility_powered(c^, id) {
+		if coverage_needs_power(b.kind) && !facility_powered(c, id) {
 			continue
 		}
 		stamp_coverage_square(dest, i % MAP_SIZE, i / MAP_SIZE)
@@ -541,7 +538,7 @@ stamp_coverage_square :: proc(dest: ^[MAP_SIZE * MAP_SIZE]bool, fx, fy: int) {
 }
 
 @(private)
-facility_powered :: proc(c: City, id: u16) -> bool {
+facility_powered :: proc(c: ^City, id: u16) -> bool {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id == id && c.powered[i] {
 			return true
@@ -662,7 +659,7 @@ recompute_traffic :: proc(c: ^City) {
 
 @(private)
 recompute_crime :: proc(c: ^City) {
-	unemployed := city_population(c^) > city_jobs(c^)
+	unemployed := city_population(c) > city_jobs(c)
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
 			if coverage_at(c, x, y, .Police) {
@@ -731,7 +728,7 @@ pollution_from_distance :: proc(d: int) -> f32 {
 recompute_land_value :: proc(c: ^City) {
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			lot := city_lot(c^, x, y)
+			lot := city_lot(c, x, y)
 			v: f32
 			switch lot.terrain {
 			case .Grass:
@@ -741,14 +738,14 @@ recompute_land_value :: proc(c: ^City) {
 			case .Lake, .Rock:
 				v = 0
 			}
-			if lot.kind == .Road || has_road_access(c^, x, y) {
+			if lot.kind == .Road || has_road_access(c, x, y) {
 				v += 1
 			}
 			if coverage_at(c, x, y, .Park) {
 				v += 1
 			}
 			v -= c.pollution[y * MAP_SIZE + x]
-			if kind, ok := building_kind_at(c^, x, y); ok && kind == .Shop {
+			if kind, ok := building_kind_at(c, x, y); ok && kind == .Shop {
 				v -= c.crime[y * MAP_SIZE + x]
 			}
 			c.land_value[y * MAP_SIZE + x] = v
@@ -756,15 +753,15 @@ recompute_land_value :: proc(c: ^City) {
 	}
 }
 
-city_population :: proc(c: City) -> int {
+city_population :: proc(c: ^City) -> int {
 	return grown_stat(c, .House, HOUSE_POPULATION)
 }
 
-city_jobs :: proc(c: City) -> int {
+city_jobs :: proc(c: ^City) -> int {
 	return shop_jobs(c) + factory_jobs(c)
 }
 
-city_happiness :: proc(c: City) -> f32 {
+city_happiness :: proc(c: ^City) -> f32 {
 	n := 0
 	sum: f32
 	for b in c.buildings {
@@ -779,16 +776,16 @@ city_happiness :: proc(c: City) -> f32 {
 	return sum / f32(n)
 }
 
-city_power_percent :: proc(c: City) -> f32 {
+city_power_percent :: proc(c: ^City) -> f32 {
 	return occupied_supply_percent(c, c.powered)
 }
 
-city_water_percent :: proc(c: City) -> f32 {
+city_water_percent :: proc(c: ^City) -> f32 {
 	return occupied_supply_percent(c, c.watered)
 }
 
 @(private)
-occupied_supply_percent :: proc(c: City, flags: [MAP_SIZE * MAP_SIZE]bool) -> f32 {
+occupied_supply_percent :: proc(c: ^City, flags: [MAP_SIZE * MAP_SIZE]bool) -> f32 {
 	n, supplied := 0, 0
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id == 0 {
@@ -806,17 +803,17 @@ occupied_supply_percent :: proc(c: City, flags: [MAP_SIZE * MAP_SIZE]bool) -> f3
 }
 
 @(private)
-shop_jobs :: proc(c: City) -> int {
+shop_jobs :: proc(c: ^City) -> int {
 	return grown_stat(c, .Shop, SHOP_JOBS)
 }
 
 @(private)
-factory_jobs :: proc(c: City) -> int {
+factory_jobs :: proc(c: ^City) -> int {
 	return grown_stat(c, .Factory, FACTORY_JOBS)
 }
 
 @(private)
-grown_stat :: proc(c: City, kind: Building_Kind, base: int) -> int {
+grown_stat :: proc(c: ^City, kind: Building_Kind, base: int) -> int {
 	n := 0
 	for id in 1 ..= MAX_BUILDINGS {
 		b := c.buildings[id - 1]
@@ -828,7 +825,7 @@ grown_stat :: proc(c: City, kind: Building_Kind, base: int) -> int {
 }
 
 @(private)
-building_plots :: proc(c: City, id: u16) -> int {
+building_plots :: proc(c: ^City, id: u16) -> int {
 	n := 0
 	for lot in c.lots {
 		if lot.building_id == id {
@@ -838,15 +835,15 @@ building_plots :: proc(c: City, id: u16) -> int {
 	return n
 }
 
-city_residential_demand :: proc(c: City) -> int {
+city_residential_demand :: proc(c: ^City) -> int {
 	return DEMAND_BASE + city_jobs(c) - city_population(c)
 }
 
-city_commercial_demand :: proc(c: City) -> int {
+city_commercial_demand :: proc(c: ^City) -> int {
 	return city_population(c) - shop_jobs(c)
 }
 
-city_industrial_demand :: proc(c: City) -> int {
+city_industrial_demand :: proc(c: ^City) -> int {
 	return shop_jobs(c) - factory_jobs(c)
 }
 
@@ -864,9 +861,9 @@ tick :: proc(c: ^City, pick: Pick) {
 		apply_fire(c, pick)
 	}
 	apply_health(c)
-	grow_houses := city_residential_demand(c^) > 0
-	grow_shops := city_commercial_demand(c^) > 0
-	grow_factories := city_industrial_demand(c^) > 0
+	grow_houses := city_residential_demand(c) > 0
+	grow_shops := city_commercial_demand(c) > 0
+	grow_factories := city_industrial_demand(c) > 0
 	if grow_houses {
 		grow(c, .Residential, .House, pick)
 	}
@@ -876,16 +873,16 @@ tick :: proc(c: ^City, pick: Pick) {
 	if grow_factories {
 		grow(c, .Industrial, .Factory, pick)
 	}
-	if city_residential_demand(c^) > 0 {
+	if city_residential_demand(c) > 0 {
 		level_up(c, .House, pick)
 	}
-	if city_commercial_demand(c^) > 0 {
+	if city_commercial_demand(c) > 0 {
 		level_up(c, .Shop, pick)
 	}
-	if city_industrial_demand(c^) > 0 {
+	if city_industrial_demand(c) > 0 {
 		level_up(c, .Factory, pick)
 	}
-	c.money += c.tax * city_population(c^)
+	c.money += c.tax * city_population(c)
 	advance_construction(c)
 	apply_maintenance(c)
 }
@@ -978,7 +975,7 @@ spread_fire :: proc(c: ^City, pick: Pick) {
 			if !in_bounds(nx, ny) {
 				continue
 			}
-			lot := city_lot(c^, nx, ny)
+			lot := city_lot(c, nx, ny)
 			if lot.kind == .Road || lot.terrain == .Lake || lot.terrain == .Rock {
 				continue
 			}
@@ -1015,10 +1012,10 @@ sample_graph :: proc(c: ^City) {
 		c.graph_len -= 1
 	}
 	c.graph[c.graph_len] = Graph_Point {
-		population = city_population(c^),
-		jobs       = city_jobs(c^),
-		money      = city_money(c^),
-		happiness  = city_happiness(c^),
+		population = city_population(c),
+		jobs       = city_jobs(c),
+		money      = city_money(c),
+		happiness  = city_happiness(c),
 	}
 	c.graph_len += 1
 }
@@ -1026,7 +1023,7 @@ sample_graph :: proc(c: ^City) {
 @(private)
 apply_health :: proc(c: ^City) {
 	// ponytail: producing pop, so demand can return; husks may pulse until shops exist
-	unemployed := city_population(c^) > city_jobs(c^)
+	unemployed := city_population(c) > city_jobs(c)
 	for id in 1 ..= MAX_BUILDINGS {
 		b := &c.buildings[id - 1]
 		if !b.present || b.remaining > 0 {
@@ -1154,7 +1151,7 @@ grow :: proc(c: ^City, zone: Zone, kind: Building_Kind, pick: Pick) {
 	size := 2
 	for y in 0 ..< MAP_SIZE - 1 {
 		for x in 0 ..< MAP_SIZE - 1 {
-			if eligible_2x2(c^, x, y, zone) {
+			if eligible_2x2(c, x, y, zone) {
 				count += 1
 			}
 		}
@@ -1163,7 +1160,7 @@ grow :: proc(c: ^City, zone: Zone, kind: Building_Kind, pick: Pick) {
 		size = 1
 		for y in 0 ..< MAP_SIZE {
 			for x in 0 ..< MAP_SIZE {
-				if eligible(c^, x, y, zone) {
+				if eligible(c, x, y, zone) {
 					count += 1
 				}
 			}
@@ -1178,7 +1175,7 @@ grow :: proc(c: ^City, zone: Zone, kind: Building_Kind, pick: Pick) {
 	xmax := ymax
 	for y in 0 ..< ymax {
 		for x in 0 ..< xmax {
-			ok := eligible_2x2(c^, x, y, zone) if size == 2 else eligible(c^, x, y, zone)
+			ok := eligible_2x2(c, x, y, zone) if size == 2 else eligible(c, x, y, zone)
 			if ok {
 				if i == chosen {
 					id := alloc_building(c, kind)
@@ -1198,7 +1195,7 @@ grow :: proc(c: ^City, zone: Zone, kind: Building_Kind, pick: Pick) {
 }
 
 @(private)
-eligible_2x2 :: proc(c: City, x, y: int, zone: Zone) -> bool {
+eligible_2x2 :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 	sum: f32
 	access := false
 	for dy in 0 ..< 2 {
@@ -1216,7 +1213,7 @@ eligible_2x2 :: proc(c: City, x, y: int, zone: Zone) -> bool {
 }
 
 @(private)
-plot_ready :: proc(c: City, x, y: int, zone: Zone) -> bool {
+plot_ready :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 	lot := city_lot(c, x, y)
 	return lot.kind == .Plot &&
 		lot.zone == zone &&
@@ -1226,7 +1223,7 @@ plot_ready :: proc(c: City, x, y: int, zone: Zone) -> bool {
 }
 
 @(private)
-eligible :: proc(c: City, x, y: int, zone: Zone) -> bool {
+eligible :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 	return plot_ready(c, x, y, zone) && has_road_access(c, x, y)
 }
 
@@ -1234,7 +1231,7 @@ eligible :: proc(c: City, x, y: int, zone: Zone) -> bool {
 level_up :: proc(c: ^City, kind: Building_Kind, pick: Pick) {
 	count := 0
 	for id in 1 ..= MAX_BUILDINGS {
-		if eligible_level(c^, u16(id), kind) {
+		if eligible_level(c, u16(id), kind) {
 			count += 1
 		}
 	}
@@ -1244,7 +1241,7 @@ level_up :: proc(c: ^City, kind: Building_Kind, pick: Pick) {
 	chosen := pick(count)
 	i := 0
 	for id in 1 ..= MAX_BUILDINGS {
-		if eligible_level(c^, u16(id), kind) {
+		if eligible_level(c, u16(id), kind) {
 			if i == chosen {
 				c.buildings[id - 1].level += 1
 				return
@@ -1255,7 +1252,7 @@ level_up :: proc(c: ^City, kind: Building_Kind, pick: Pick) {
 }
 
 @(private)
-eligible_level :: proc(c: City, id: u16, kind: Building_Kind) -> bool {
+eligible_level :: proc(c: ^City, id: u16, kind: Building_Kind) -> bool {
 	b := c.buildings[id - 1]
 	if !producing(b) || b.kind != kind || b.level < 1 || b.level >= 3 {
 		return false
@@ -1278,7 +1275,7 @@ eligible_level :: proc(c: City, id: u16, kind: Building_Kind) -> bool {
 }
 
 @(private)
-building_avg_land_value :: proc(c: City, id: u16) -> f32 {
+building_avg_land_value :: proc(c: ^City, id: u16) -> f32 {
 	sum: f32
 	n := 0
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
@@ -1294,7 +1291,7 @@ building_avg_land_value :: proc(c: City, id: u16) -> f32 {
 }
 
 @(private)
-building_has_road :: proc(c: City, id: u16) -> bool {
+building_has_road :: proc(c: ^City, id: u16) -> bool {
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id == id && has_road_access(c, i % MAP_SIZE, i / MAP_SIZE) {
 			return true
@@ -1304,15 +1301,14 @@ building_has_road :: proc(c: City, id: u16) -> bool {
 }
 
 @(private)
-building_all_covered :: proc(c: City, id: u16, kind: Building_Kind) -> bool {
-	c := c
+building_all_covered :: proc(c: ^City, id: u16, kind: Building_Kind) -> bool {
 	found := false
 	for i in 0 ..< MAP_SIZE * MAP_SIZE {
 		if c.lots[i].building_id != id {
 			continue
 		}
 		found = true
-		if !coverage_at(&c, i % MAP_SIZE, i / MAP_SIZE, kind) {
+		if !coverage_at(c, i % MAP_SIZE, i / MAP_SIZE, kind) {
 			return false
 		}
 	}
@@ -1320,7 +1316,7 @@ building_all_covered :: proc(c: City, id: u16, kind: Building_Kind) -> bool {
 }
 
 @(private)
-has_road_access :: proc(c: City, x, y: int) -> bool {
+has_road_access :: proc(c: ^City, x, y: int) -> bool {
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for n in cardinal {
 		nx, ny := x + n[0], y + n[1]
@@ -1335,7 +1331,7 @@ has_road_access :: proc(c: City, x, y: int) -> bool {
 }
 
 @(private)
-has_lake_neighbor :: proc(c: City, x, y: int) -> bool {
+has_lake_neighbor :: proc(c: ^City, x, y: int) -> bool {
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for n in cardinal {
 		nx, ny := x + n[0], y + n[1]
@@ -1357,7 +1353,7 @@ BUILDING_BYTES :: 7
 FIRE_BYTES :: 4
 SAVE_MAX :: SAVE_HEADER + MAX_BUILDINGS * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * (LOT_BYTES + FIRE_BYTES)
 
-city_save :: proc(c: City, path: string) -> bool {
+city_save :: proc(c: ^City, path: string) -> bool {
 	buf: [SAVE_MAX]u8
 	buf[0] = SAVE_VERSION
 	put_i64le(buf[1:9], i64(c.money))
@@ -1395,34 +1391,38 @@ city_save :: proc(c: City, path: string) -> bool {
 	return os.write_entire_file(path, buf[:i]) == nil
 }
 
-city_load :: proc(path: string) -> (c: City, ok: bool) {
+city_load :: proc(path: string) -> (c: ^City, ok: bool) {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
-		return {}, false
+		return nil, false
 	}
 	defer delete(data)
 	if len(data) < SAVE_HEADER || data[0] != SAVE_VERSION {
-		return {}, false
+		return nil, false
 	}
 	count := int(get_u16le(data[26:28]))
 	if count > MAX_BUILDINGS {
-		return {}, false
+		return nil, false
 	}
 	if len(data) !=
 	   SAVE_HEADER + count * BUILDING_BYTES + MAP_SIZE * MAP_SIZE * (LOT_BYTES + FIRE_BYTES) {
-		return {}, false
+		return nil, false
 	}
 	ticks := get_i64le(data[17:25])
 	if ticks < 0 {
-		return {}, false
+		return nil, false
 	}
 	if data[25] > 1 {
-		return {}, false
+		return nil, false
 	}
-	c.money = int(get_i64le(data[1:9]))
-	c.tax = int(get_i64le(data[9:17]))
-	c.ticks = int(ticks)
-	c.outage = data[25] == 1
+	p := new(City)
+	defer if !ok {
+		free(p)
+	}
+	p.money = int(get_i64le(data[1:9]))
+	p.tax = int(get_i64le(data[9:17]))
+	p.ticks = int(ticks)
+	p.outage = data[25] == 1
 	i := SAVE_HEADER
 	for b in 0 ..< count {
 		if data[i] >= u8(len(Building_Kind)) {
@@ -1449,7 +1449,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		} else if level != 0 {
 			return {}, false
 		}
-		c.buildings[b] = Building {
+		p.buildings[b] = Building {
 			kind      = kind,
 			present   = true,
 			health    = h,
@@ -1459,7 +1459,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		i += BUILDING_BYTES
 	}
 	refs: [MAX_BUILDINGS]int
-	for &lot in c.lots {
+	for &lot in p.lots {
 		if data[i] > u8(Lot_Kind.Road) ||
 		   data[i + 1] > u8(Zone.Industrial) ||
 		   data[i + 2] > u8(Terrain.Rock) {
@@ -1483,7 +1483,7 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 		if f != f || f < 0 || f > 1 {
 			return {}, false
 		}
-		c.fire[j] = f
+		p.fire[j] = f
 		i += FIRE_BYTES
 	}
 	for b in 0 ..< count {
@@ -1491,8 +1491,10 @@ city_load :: proc(path: string) -> (c: City, ok: bool) {
 			return {}, false
 		}
 	}
-	recompute_derived(&c)
-	return c, true
+	recompute_derived(p)
+	c = p
+	ok = true
+	return
 }
 
 @(private)

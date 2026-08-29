@@ -47,6 +47,7 @@ main :: proc() {
 	rl.SetTargetFPS(60)
 
 	c := city.city_new()
+	defer free(c)
 	paused := true
 	speed := 1
 	tool := Tool.Road
@@ -81,8 +82,8 @@ main :: proc() {
 		if rl.IsKeyPressed(.T) do overlay = .None if overlay == .Traffic else .Traffic
 		if rl.IsKeyPressed(.C) do overlay = .None if overlay == .Crime else .Crime
 		if rl.IsKeyPressed(.I) do overlay = .None if overlay == .Fire else .Fire
-		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) - 1)
-		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(&c, city.city_tax(c) + 1)
+		if rl.IsKeyPressed(.LEFT_BRACKET) do city.city_set_tax(c, city.city_tax(c) - 1)
+		if rl.IsKeyPressed(.RIGHT_BRACKET) do city.city_set_tax(c, city.city_tax(c) + 1)
 		if rl.IsKeyPressed(.MINUS) || rl.IsKeyPressed(.KP_SUBTRACT) {
 			if speed > 1 do speed /= 2
 		}
@@ -95,6 +96,7 @@ main :: proc() {
 		}
 		if rl.IsKeyPressed(.L) {
 			if loaded, ok := city.city_load(city.SAVE_PATH); ok {
+				free(c)
 				c = loaded
 				tick_acc = 0
 			}
@@ -120,30 +122,30 @@ main :: proc() {
 		if rl.IsMouseButtonDown(.LEFT) && hover_ok {
 			switch tool {
 			case .Road:
-				city.paint_road(&c, hover_x, hover_y)
+				city.paint_road(c, hover_x, hover_y)
 			case .Residential:
-				city.paint_zone(&c, hover_x, hover_y, .Residential)
+				city.paint_zone(c, hover_x, hover_y, .Residential)
 			case .Commercial:
-				city.paint_zone(&c, hover_x, hover_y, .Commercial)
+				city.paint_zone(c, hover_x, hover_y, .Commercial)
 			case .Industrial:
-				city.paint_zone(&c, hover_x, hover_y, .Industrial)
+				city.paint_zone(c, hover_x, hover_y, .Industrial)
 			case .Bulldoze:
-				city.bulldoze(&c, hover_x, hover_y)
+				city.bulldoze(c, hover_x, hover_y)
 			case .Station:
 				size := 2 if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) else 1
-				city.stamp(&c, hover_x, hover_y, .Station, size)
+				city.stamp(c, hover_x, hover_y, .Station, size)
 			case .Tower:
-				city.stamp(&c, hover_x, hover_y, .Tower)
+				city.stamp(c, hover_x, hover_y, .Tower)
 			case .Park:
-				city.stamp(&c, hover_x, hover_y, .Park)
+				city.stamp(c, hover_x, hover_y, .Park)
 			case .School:
-				city.stamp(&c, hover_x, hover_y, .School)
+				city.stamp(c, hover_x, hover_y, .School)
 			case .Police:
-				city.stamp(&c, hover_x, hover_y, .Police)
+				city.stamp(c, hover_x, hover_y, .Police)
 			case .Firehouse:
-				city.stamp(&c, hover_x, hover_y, .Firehouse)
+				city.stamp(c, hover_x, hover_y, .Firehouse)
 			case .Hospital:
-				city.stamp(&c, hover_x, hover_y, .Hospital)
+				city.stamp(c, hover_x, hover_y, .Hospital)
 			}
 		}
 
@@ -151,7 +153,7 @@ main :: proc() {
 			tick_acc += rl.GetFrameTime() * f32(speed)
 			for tick_acc >= TICK_DT {
 				tick_acc -= TICK_DT
-				city.tick(&c, pick)
+				city.tick(c, pick)
 			}
 		}
 
@@ -288,7 +290,7 @@ CONSTRUCTION_STAMP :: [16]u16 {
 	0x9009, 0xA005, 0xC003, 0xFFFF,
 }
 
-stamp_footprint :: proc(c: city.City, x, y: int) -> (size: int, ok: bool) {
+stamp_footprint :: proc(c: ^city.City, x, y: int) -> (size: int, ok: bool) {
 	id := city.city_lot(c, x, y).building_id
 	if id == 0 {
 		return 0, false
@@ -319,7 +321,7 @@ draw_stamp :: proc(ox, oy, scale: i32, mask: [16]u16, col: rl.Color) {
 	}
 }
 
-stamp_color :: proc(c: city.City, x, y: int, kind: city.Building_Kind) -> (mask: [16]u16, col: rl.Color) {
+stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask: [16]u16, col: rl.Color) {
 	stamps := STAMP
 	col = building_color(kind)
 	mask = stamps[kind]
@@ -337,7 +339,7 @@ stamp_color :: proc(c: city.City, x, y: int, kind: city.Building_Kind) -> (mask:
 	return mask, col
 }
 
-draw_stamps :: proc(c: city.City) {
+draw_stamps :: proc(c: ^city.City) {
 	for y in 0 ..< city.MAP_SIZE {
 		for x in 0 ..< city.MAP_SIZE {
 			size, origin := stamp_footprint(c, x, y)
@@ -354,7 +356,7 @@ draw_stamps :: proc(c: city.City) {
 	}
 }
 
-ground_color :: proc(c: city.City, x, y: int) -> rl.Color {
+ground_color :: proc(c: ^city.City, x, y: int) -> rl.Color {
 	lot := city.city_lot(c, x, y)
 	if lot.kind == .Road {
 		return rl.GRAY
@@ -381,7 +383,7 @@ ground_color :: proc(c: city.City, x, y: int) -> rl.Color {
 	return rl.MAGENTA
 }
 
-lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
+lot_color :: proc(c: ^city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
 	switch overlay {
 	case .Pollution:
@@ -422,7 +424,7 @@ lot_color :: proc(c: city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	return ground_color(c, x, y)
 }
 
-draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
+draw_hud :: proc(c: ^city.City, paused: bool, speed: int, tool: Tool, overlay: Overlay, hover_x, hover_y: int, hover_ok: bool) {
 	rl.DrawRectangle(0, 0, WIN_W, HUD_H, rl.BLACK)
 	outage := "  OUTAGE" if city.city_outage(c) else ""
 	line1 := fmt.ctprintf(
@@ -459,7 +461,7 @@ draw_hud :: proc(c: city.City, paused: bool, speed: int, tool: Tool, overlay: Ov
 	draw_graphs(c)
 }
 
-draw_inspect :: proc(c: city.City, x, y: int) {
+draw_inspect :: proc(c: ^city.City, x, y: int) {
 	lot := city.city_lot(c, x, y)
 	build := "-"
 	if kind, ok := city.building_kind_at(c, x, y); ok {
@@ -538,7 +540,7 @@ graph_color :: proc(g: Hud_Graph) -> rl.Color {
 	return rl.WHITE
 }
 
-draw_graphs :: proc(c: city.City) {
+draw_graphs :: proc(c: ^city.City) {
 	n := city.city_graph_len(c)
 	row_h: i32 = 16
 	for g in Hud_Graph {

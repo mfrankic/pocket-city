@@ -110,6 +110,7 @@ City :: struct {
 	pollution:         [MAP_SIZE * MAP_SIZE]f32,
 	traffic:           [MAP_SIZE * MAP_SIZE]f32,
 	crime:             [MAP_SIZE * MAP_SIZE]f32,
+	land_value:        [MAP_SIZE * MAP_SIZE]f32,
 	fire:              [MAP_SIZE * MAP_SIZE]f32,
 }
 
@@ -119,6 +120,7 @@ city_new :: proc() -> City {
 		tax   = TAX_DEFAULT,
 	}
 	generate_terrain(&c)
+	recompute_derived(&c)
 	return c
 }
 
@@ -463,28 +465,7 @@ lot_education :: proc(c: City, x, y: int) -> bool {
 }
 
 lot_land_value :: proc(c: City, x, y: int) -> f32 {
-	c := c
-	lot := city_lot(c, x, y)
-	v: f32
-	switch lot.terrain {
-	case .Grass:
-		v = 1
-	case .Forest:
-		v = 0.5
-	case .Lake, .Rock:
-		v = 0
-	}
-	if lot.kind == .Road || has_road_access(c, x, y) {
-		v += 1
-	}
-	if coverage_at(&c, x, y, .Park) {
-		v += 1
-	}
-	v -= lot_pollution(c, x, y)
-	if kind, ok := building_kind_at(c, x, y); ok && kind == .Shop {
-		v -= lot_crime(c, x, y)
-	}
-	return v
+	return c.land_value[y * MAP_SIZE + x]
 }
 
 @(private)
@@ -507,6 +488,7 @@ recompute_derived :: proc(c: ^City) {
 	recompute_traffic(c)
 	recompute_crime(c)
 	recompute_pollution(c)
+	recompute_land_value(c)
 }
 
 @(private)
@@ -732,6 +714,35 @@ pollution_from_distance :: proc(d: int) -> f32 {
 		amount *= POLLUTION_FALLOFF
 	}
 	return amount
+}
+
+@(private)
+recompute_land_value :: proc(c: ^City) {
+	for y in 0 ..< MAP_SIZE {
+		for x in 0 ..< MAP_SIZE {
+			lot := city_lot(c^, x, y)
+			v: f32
+			switch lot.terrain {
+			case .Grass:
+				v = 1
+			case .Forest:
+				v = 0.5
+			case .Lake, .Rock:
+				v = 0
+			}
+			if lot.kind == .Road || has_road_access(c^, x, y) {
+				v += 1
+			}
+			if coverage_at(c, x, y, .Park) {
+				v += 1
+			}
+			v -= c.pollution[y * MAP_SIZE + x]
+			if kind, ok := building_kind_at(c^, x, y); ok && kind == .Shop {
+				v -= c.crime[y * MAP_SIZE + x]
+			}
+			c.land_value[y * MAP_SIZE + x] = v
+		}
+	}
 }
 
 city_population :: proc(c: City) -> int {

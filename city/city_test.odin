@@ -1397,6 +1397,21 @@ bulldoze_factory_clears_pollution_without_tick :: proc(t: ^testing.T) {
 	testing.expect_value(t, lot_pollution(c, fx, fy), f32(0))
 }
 
+@(test)
+bulldoze_factory_raises_land_value_without_tick :: proc(t: ^testing.T) {
+	c := city_new()
+	p, ok := supplied_plots(&c, 3)
+	testing.expect(t, ok)
+	grow_house_shop_factory(&c, p[0], p[1], p[2])
+	tick(&c, pick_first)
+	fx, fy := p[2][0], p[2][1]
+	expect_building(t, c, fx, fy, .Factory)
+	testing.expect(t, lot_pollution(c, fx, fy) > 0)
+	before := lot_land_value(c, fx, fy)
+	testing.expect(t, bulldoze(&c, fx, fy))
+	testing.expect(t, lot_land_value(c, fx, fy) > before)
+}
+
 cardinal_pair :: proc(plots: [][2]int) -> (a, b: [2]int, ok: bool) {
 	for i in 0 ..< len(plots) {
 		for j in i + 1 ..< len(plots) {

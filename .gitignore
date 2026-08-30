@@ -2,3 +2,7 @@
 /pocket-city
 /pocket-city.exe
 *.save
+.scratch/
+AGENTS.md
+CONTEXT.md
+docs/

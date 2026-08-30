@@ -2,6 +2,8 @@
 
 A top-down city builder on a 64×64 grid.
 
+![Pocket City](screenshot.png)
+
 ## Play
 
 Binaries are on [GitHub Releases](https://github.com/mfrankic/pocket-city/releases).
@@ -25,3 +27,7 @@ odin test city
 ```
 
 Game binaries come from CI. `odin build .` writes `pocket-city` in this directory; that file, `dist/`, and `*.save` are gitignored.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

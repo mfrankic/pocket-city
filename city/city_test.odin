@@ -68,6 +68,7 @@ city_lot_answers_occupant_for_inspect_and_stamps :: proc(t: ^testing.T) {
 	house = city_lot(c, p[0][0], p[0][1])
 	testing.expect_value(t, house.occupant.status, Occupant_Status.Finished)
 	testing.expect_value(t, house.occupant.band, Health_Band.None)
+	testing.expect_value(t, house.occupant.health, f32(1))
 	testing.expect_value(t, house.occupant.level, u8(1))
 }
 
@@ -103,29 +104,32 @@ find_terrain :: proc(c: ^City, want: Terrain) -> (x, y: int, ok: bool) {
 }
 
 expect_building :: proc(t: ^testing.T, c: ^City, x, y: int, kind: Building_Kind) {
-	got, ok := building_kind_at(c, x, y)
-	testing.expect(t, ok)
-	testing.expect_value(t, got, kind)
+	occ := city_lot(c, x, y).occupant
+	testing.expect(t, occ.present)
+	testing.expect_value(t, occ.kind, kind)
 }
 
 expect_no_building :: proc(t: ^testing.T, c: ^City, x, y: int) {
-	_, ok := building_kind_at(c, x, y)
-	testing.expect(t, !ok)
+	testing.expect(t, !city_lot(c, x, y).occupant.present)
 }
 
 expect_footprint :: proc(t: ^testing.T, c: ^City, x, y, size: int, kind: Building_Kind) {
-	s, nw := building_northwest_at(c, x, y)
-	testing.expect(t, nw)
-	testing.expect_value(t, s, size)
+	occ := city_lot(c, x, y).occupant
+	testing.expect(t, occ.northwest)
+	testing.expect_value(t, occ.size, size)
 	for dy in 0 ..< size {
 		for dx in 0 ..< size {
 			expect_building(t, c, x + dx, y + dy, kind)
 			if dx != 0 || dy != 0 {
-				_, origin := building_northwest_at(c, x + dx, y + dy)
-				testing.expect(t, !origin)
+				testing.expect(t, !city_lot(c, x + dx, y + dy).occupant.northwest)
 			}
 		}
 	}
+}
+
+in_construction :: proc(c: ^City, x, y: int) -> bool {
+	occ := city_lot(c, x, y).occupant
+	return occ.present && occ.status == .Construction
 }
 
 @(test)
@@ -195,9 +199,9 @@ bulldoze_forest_raises_land_value_without_tick :: proc(t: ^testing.T) {
 	defer free(c)
 	x, y, found := find_terrain(c, .Forest)
 	testing.expect(t, found)
-	before := lot_land_value(c, x, y)
+	before := city_lot(c, x, y).land_value
 	testing.expect(t, bulldoze(c, x, y))
-	testing.expect(t, lot_land_value(c, x, y) > before)
+	testing.expect(t, city_lot(c, x, y).land_value > before)
 }
 
 @(test)
@@ -283,7 +287,8 @@ grown_house_occupies_one_plot :: proc(t: ^testing.T) {
 	paint_zone(c, p[0][0], p[0][1], .Residential)
 	tick(c, pick_first)
 	expect_building(t, c, p[0][0], p[0][1], .House)
-	size, nw := building_northwest_at(c, p[0][0], p[0][1])
+	size := city_lot(c, p[0][0], p[0][1]).occupant.size
+	nw := city_lot(c, p[0][0], p[0][1]).occupant.northwest
 	testing.expect(t, nw)
 	testing.expect_value(t, size, 1)
 	expect_no_building(t, c, p[1][0], p[1][1])
@@ -416,15 +421,21 @@ two_houses_each_occupy_one_plot :: proc(t: ^testing.T) {
 	paint_zone(c, p[1][0], p[1][1], .Residential)
 	tick(c, pick_first)
 	tick(c, pick_first)
-	size_a, nw_a := building_northwest_at(c, p[0][0], p[0][1])
-	size_b, nw_b := building_northwest_at(c, p[1][0], p[1][1])
+	size_a := city_lot(c, p[0][0], p[0][1]).occupant.size
+	nw_a := city_lot(c, p[0][0], p[0][1]).occupant.northwest
+	size_b := city_lot(c, p[1][0], p[1][1]).occupant.size
+	nw_b := city_lot(c, p[1][0], p[1][1]).occupant.northwest
 	testing.expect(t, nw_a && nw_b)
 	testing.expect_value(t, size_a, 1)
 	testing.expect_value(t, size_b, 1)
 	expect_building(t, c, p[0][0], p[0][1], .House)
 	expect_building(t, c, p[1][0], p[1][1], .House)
-	ra, aok := building_construction_remaining_at(c, p[0][0], p[0][1])
-	rb, bok := building_construction_remaining_at(c, p[1][0], p[1][1])
+	ra_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	ra := ra_occ.remaining
+	aok := ra_occ.present
+	o5 := city_lot(c, p[1][0], p[1][1]).occupant
+	rb := o5.remaining
+	bok := o5.present
 	testing.expect(t, aok && bok)
 	testing.expect(t, ra > 0 && rb > 0)
 }
@@ -612,8 +623,10 @@ save_then_load_keeps_two_house_footprints :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	size_a, nw_a := building_northwest_at(loaded, p[0][0], p[0][1])
-	size_b, nw_b := building_northwest_at(loaded, p[1][0], p[1][1])
+	size_a := city_lot(loaded, p[0][0], p[0][1]).occupant.size
+	nw_a := city_lot(loaded, p[0][0], p[0][1]).occupant.northwest
+	size_b := city_lot(loaded, p[1][0], p[1][1]).occupant.size
+	nw_b := city_lot(loaded, p[1][0], p[1][1]).occupant.northwest
 	testing.expect(t, nw_a && nw_b)
 	testing.expect_value(t, size_a, 1)
 	testing.expect_value(t, size_b, 1)
@@ -921,7 +934,7 @@ supplied_plots :: proc(c: ^City, n: int) -> (out: [8][2]int, ok: bool) {
 			if !is_empty_grass(c, x, y) {
 				continue
 			}
-			if !lot_powered(c, x, y) || !lot_watered(c, x, y) {
+			if !city_lot(c, x, y).powered || !city_lot(c, x, y).watered {
 				continue
 			}
 			if !plot_touches_road(c, x, y) {
@@ -1065,8 +1078,8 @@ station_powers_plots_on_its_road :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
-	testing.expect(t, lot_powered(c, 1, 0))
-	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, city_lot(c, 1, 0).powered)
+	testing.expect(t, city_lot(c, 0, 1).powered)
 }
 
 @(test)
@@ -1076,8 +1089,8 @@ unconnected_road_stays_dark :: proc(t: ^testing.T) {
 	paint_road(c, 0, 0)
 	paint_road(c, 15, 15)
 	testing.expect(t, stamp(c, 1, 0, .Station))
-	testing.expect(t, lot_powered(c, 0, 1))
-	testing.expect(t, !lot_powered(c, 15, 16))
+	testing.expect(t, city_lot(c, 0, 1).powered)
+	testing.expect(t, !city_lot(c, 15, 16).powered)
 }
 
 @(test)
@@ -1091,14 +1104,14 @@ station_powers_only_up_to_capacity :: proc(t: ^testing.T) {
 	n := 0
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			if lot_powered(c, x, y) {
+			if city_lot(c, x, y).powered {
 				n += 1
 			}
 		}
 	}
 	testing.expect_value(t, n, SUPPLY_CAPACITY)
-	testing.expect(t, lot_powered(c, 32, 0))
-	testing.expect(t, !lot_powered(c, 31, 1))
+	testing.expect(t, city_lot(c, 32, 0).powered)
+	testing.expect(t, !city_lot(c, 31, 1).powered)
 }
 
 @(test)
@@ -1109,7 +1122,7 @@ two_by_two_station_reaches_past_one_by_one_capacity :: proc(t: ^testing.T) {
 		paint_road(c, x, 0)
 	}
 	testing.expect(t, stamp(c, 0, 1, .Station, 2))
-	testing.expect(t, lot_powered(c, 31, 1))
+	testing.expect(t, city_lot(c, 31, 1).powered)
 }
 
 @(test)
@@ -1127,11 +1140,11 @@ powered_tower_waters_plots_on_its_road :: proc(t: ^testing.T) {
 	sx, sy, plot := find_empty_cardinal_plot(c, rx, ry)
 	testing.expect(t, plot)
 	testing.expect(t, stamp(c, sx, sy, .Station))
-	testing.expect(t, lot_powered(c, tx, ty))
-	testing.expect(t, lot_watered(c, tx, ty))
+	testing.expect(t, city_lot(c, tx, ty).powered)
+	testing.expect(t, city_lot(c, tx, ty).watered)
 	wx, wy, wet := find_empty_cardinal_plot(c, rx, ry)
 	testing.expect(t, wet)
-	testing.expect(t, lot_watered(c, wx, wy))
+	testing.expect(t, city_lot(c, wx, wy).watered)
 }
 
 @(test)
@@ -1144,13 +1157,13 @@ unpowered_tower_supplies_no_water :: proc(t: ^testing.T) {
 	testing.expect(t, grass)
 	testing.expect(t, paint_access_road(c, tx, ty))
 	testing.expect(t, stamp(c, tx, ty, .Tower))
-	testing.expect(t, !lot_powered(c, tx, ty))
+	testing.expect(t, !city_lot(c, tx, ty).powered)
 	rx, ry, road := find_cardinal_road(c, tx, ty)
 	testing.expect(t, road)
 	wx, wy, plot := find_empty_cardinal_plot(c, rx, ry)
 	testing.expect(t, plot)
-	testing.expect(t, !lot_watered(c, tx, ty))
-	testing.expect(t, !lot_watered(c, wx, wy))
+	testing.expect(t, !city_lot(c, tx, ty).watered)
+	testing.expect(t, !city_lot(c, wx, wy).watered)
 }
 
 @(test)
@@ -1169,8 +1182,8 @@ unconnected_road_stays_dry :: proc(t: ^testing.T) {
 	testing.expect(t, plot)
 	testing.expect(t, stamp(c, sx, sy, .Station))
 	paint_road(c, 15, 15)
-	testing.expect(t, lot_watered(c, tx, ty))
-	testing.expect(t, !lot_watered(c, 15, 16))
+	testing.expect(t, city_lot(c, tx, ty).watered)
+	testing.expect(t, !city_lot(c, 15, 16).watered)
 }
 
 @(test)
@@ -1180,16 +1193,16 @@ save_then_load_recomputes_power_and_water :: proc(t: ^testing.T) {
 	p, ok := supplied_plots(c, 1)
 	testing.expect(t, ok)
 	x, y := p[0][0], p[0][1]
-	testing.expect(t, lot_powered(c, x, y))
-	testing.expect(t, lot_watered(c, x, y))
+	testing.expect(t, city_lot(c, x, y).powered)
+	testing.expect(t, city_lot(c, x, y).watered)
 	path := "city_supply.save"
 	defer os.remove(path)
 	testing.expect(t, city_save(c, path))
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	testing.expect(t, lot_powered(loaded, x, y))
-	testing.expect(t, lot_watered(loaded, x, y))
+	testing.expect(t, city_lot(loaded, x, y).powered)
+	testing.expect(t, city_lot(loaded, x, y).watered)
 }
 
 @(test)
@@ -1198,10 +1211,10 @@ painting_a_road_extends_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
-	testing.expect(t, !lot_powered(c, 3, 1))
+	testing.expect(t, !city_lot(c, 3, 1).powered)
 	paint_road(c, 2, 0)
 	paint_road(c, 3, 0)
-	testing.expect(t, lot_powered(c, 3, 1))
+	testing.expect(t, city_lot(c, 3, 1).powered)
 }
 
 @(test)
@@ -1210,9 +1223,9 @@ bulldozing_a_station_cuts_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
-	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, city_lot(c, 0, 1).powered)
 	testing.expect(t, bulldoze(c, 1, 0))
-	testing.expect(t, !lot_powered(c, 0, 1))
+	testing.expect(t, !city_lot(c, 0, 1).powered)
 }
 
 @(test)
@@ -1244,7 +1257,9 @@ new_house_has_full_health :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	paint_zone(c, p[0][0], p[0][1], .Residential)
 	await_finished(c, p[0][0], p[0][1])
-	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	h_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	h := h_occ.health
+	health_ok := h_occ.present
 	testing.expect(t, health_ok)
 	testing.expect_value(t, h, f32(1))
 	testing.expect_value(t, city_happiness(c), f32(1))
@@ -1253,8 +1268,8 @@ new_house_has_full_health :: proc(t: ^testing.T) {
 find_building :: proc(c: ^City, kind: Building_Kind) -> (x, y: int, ok: bool) {
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			got, found := building_kind_at(c, x, y)
-			if found && got == kind {
+			occ := city_lot(c, x, y).occupant
+			if occ.present && occ.kind == kind {
 				return x, y, true
 			}
 		}
@@ -1280,16 +1295,14 @@ missing_power_abandons_a_house_into_a_husk :: proc(t: ^testing.T) {
 	abandoned := false
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		h, health_ok := building_health_at(c, p[0][0], p[0][1])
-		testing.expect(t, health_ok)
-		if h <= HEALTH_ABANDONED {
-			testing.expect(t, h > 0)
+		o8 := city_lot(c, p[0][0], p[0][1]).occupant
+		testing.expect(t, o8.present)
+		if o8.band == .Abandoned {
 			testing.expect_value(t, city_population(c), 0)
-			lot := city_lot(c, p[0][0], p[0][1])
-			testing.expect_value(t, lot.zone, Zone.Residential)
+			testing.expect_value(t, city_lot(c, p[0][0], p[0][1]).zone, Zone.Residential)
 			expect_building(t, c, p[0][0], p[0][1], .House)
-			testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
-			testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
+			testing.expect_value(t, o8.band, Health_Band.Abandoned)
+			testing.expect(t, o8.band != .Struggling)
 			abandoned = true
 			break
 		}
@@ -1315,13 +1328,13 @@ struggling_house_still_counts_population :: proc(t: ^testing.T) {
 	struggling := false
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		h, health_ok := building_health_at(c, p[0][0], p[0][1])
-		testing.expect(t, health_ok)
-		if h < HEALTH_STRUGGLING && h > HEALTH_ABANDONED {
+		o9 := city_lot(c, p[0][0], p[0][1]).occupant
+		testing.expect(t, o9.present)
+		if o9.band == .Struggling {
 			testing.expect_value(t, city_population(c), 4)
 			testing.expect_value(t, city_jobs(c), 4)
-			testing.expect(t, building_struggling_at(c, p[0][0], p[0][1]))
-			testing.expect(t, !building_abandoned_at(c, p[0][0], p[0][1]))
+			testing.expect_value(t, o9.band, Health_Band.Struggling)
+			testing.expect(t, o9.band != .Abandoned)
 			struggling = true
 			break
 		}
@@ -1348,8 +1361,12 @@ unemployment_nibbles_houses_not_shops :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	hh, hok := building_health_at(c, p[0][0], p[0][1])
-	sh, sok := building_health_at(c, p[2][0], p[2][1])
+	hh_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	hh := hh_occ.health
+	hok := hh_occ.present
+	o11 := city_lot(c, p[2][0], p[2][1]).occupant
+	sh := o11.health
+	sok := o11.present
 	testing.expect(t, hok && sok)
 	testing.expect(t, hh < 1)
 	testing.expect_value(t, sh, f32(1))
@@ -1367,14 +1384,18 @@ high_tax_nibbles_health :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	await_finished(c, p[1][0], p[1][1])
 	await_full_health(c, p[0][0], p[0][1])
-	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	h_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	h := h_occ.health
+	health_ok := h_occ.present
 	testing.expect(t, health_ok)
 	testing.expect_value(t, h, f32(1))
 	city_set_tax(c, TAX_HIGH)
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	h, health_ok = building_health_at(c, p[0][0], p[0][1])
+	o13 := city_lot(c, p[0][0], p[0][1]).occupant
+	h = o13.health
+	health_ok = o13.present
 	testing.expect(t, health_ok)
 	testing.expect(t, h < 1)
 }
@@ -1391,8 +1412,12 @@ unemployment_does_not_nibble_a_park :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	hh, hok := building_health_at(c, p[0][0], p[0][1])
-	ph, pok := building_health_at(c, p[1][0], p[1][1])
+	hh_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	hh := hh_occ.health
+	hok := hh_occ.present
+	o15 := city_lot(c, p[1][0], p[1][1]).occupant
+	ph := o15.health
+	pok := o15.present
 	testing.expect(t, hok && pok)
 	testing.expect(t, hh < 1)
 	testing.expect_value(t, ph, f32(1))
@@ -1414,9 +1439,9 @@ husk_recovers_when_power_returns :: proc(t: ^testing.T) {
 	testing.expect(t, bulldoze(c, sx, sy))
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		h, health_ok := building_health_at(c, p[0][0], p[0][1])
-		testing.expect(t, health_ok)
-		if h <= HEALTH_ABANDONED {
+		o16 := city_lot(c, p[0][0], p[0][1]).occupant
+		testing.expect(t, o16.present)
+		if o16.band == .Abandoned {
 			break
 		}
 	}
@@ -1424,9 +1449,9 @@ husk_recovers_when_power_returns :: proc(t: ^testing.T) {
 	recovered := false
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		h, health_ok := building_health_at(c, p[0][0], p[0][1])
-		testing.expect(t, health_ok)
-		if h > HEALTH_ABANDONED {
+		o17 := city_lot(c, p[0][0], p[0][1]).occupant
+		testing.expect(t, o17.present)
+		if o17.band != .Abandoned {
 			testing.expect_value(t, city_population(c), 4)
 			recovered = true
 			break
@@ -1449,24 +1474,22 @@ new_growth_skips_husk_plots :: proc(t: ^testing.T) {
 	testing.expect(t, bulldoze(c, sx, sy))
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		rem, rok := building_construction_remaining_at(c, p[0][0], p[0][1])
-		testing.expect(t, rok)
-		if rem > 0 {
+		o18 := city_lot(c, p[0][0], p[0][1]).occupant
+		testing.expect(t, o18.present)
+		if o18.remaining > 0 {
 			continue
 		}
-		h, health_ok := building_health_at(c, p[0][0], p[0][1])
-		testing.expect(t, health_ok)
-		if h <= HEALTH_ABANDONED {
+		if o18.band == .Abandoned {
 			break
 		}
 	}
-	testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
-	testing.expect(t, !building_construction_at(c, p[0][0], p[0][1]))
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).occupant.band == .Abandoned)
+	testing.expect(t, !in_construction(c, p[0][0], p[0][1]))
 	expect_no_building(t, c, p[1][0], p[1][1])
 	testing.expect(t, stamp(c, sx, sy, .Station))
 	tick(c, pick_first)
-	testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
-	testing.expect(t, !building_construction_at(c, p[0][0], p[0][1]))
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).occupant.band == .Abandoned)
+	testing.expect(t, !in_construction(c, p[0][0], p[0][1]))
 	expect_building(t, c, p[0][0], p[0][1], .House)
 	expect_building(t, c, p[1][0], p[1][1], .House)
 }
@@ -1489,7 +1512,9 @@ missing_water_nibbles_grown_buildings :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	h_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	h := h_occ.health
+	health_ok := h_occ.present
 	testing.expect(t, health_ok)
 	testing.expect(t, h < 1)
 }
@@ -1511,7 +1536,9 @@ happiness_falls_when_buildings_lose_health :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	h_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	h := h_occ.health
+	health_ok := h_occ.present
 	testing.expect(t, health_ok)
 	hap := city_happiness(c)
 	testing.expect(t, hap < 1)
@@ -1535,7 +1562,9 @@ save_then_load_keeps_health :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	h, health_ok := building_health_at(c, p[0][0], p[0][1])
+	h_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	h := h_occ.health
+	health_ok := h_occ.present
 	testing.expect(t, health_ok)
 	testing.expect(t, h < 1)
 	path := "city_health.save"
@@ -1544,7 +1573,9 @@ save_then_load_keeps_health :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	lh, lok := building_health_at(loaded, p[0][0], p[0][1])
+	o22 := city_lot(loaded, p[0][0], p[0][1]).occupant
+	lh := o22.health
+	lok := o22.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lh, h)
 	testing.expect_value(t, city_happiness(loaded), city_happiness(c))
@@ -1571,7 +1602,7 @@ factory_plot_emits_pollution :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	fx, fy := p[2][0], p[2][1]
 	expect_building(t, c, fx, fy, .Factory)
-	testing.expect(t, lot_pollution(c, fx, fy) > 0)
+	testing.expect(t, city_lot(c, fx, fy).pollution > 0)
 }
 
 @(test)
@@ -1584,9 +1615,9 @@ bulldoze_factory_clears_pollution_without_tick :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	fx, fy := p[2][0], p[2][1]
 	expect_building(t, c, fx, fy, .Factory)
-	testing.expect(t, lot_pollution(c, fx, fy) > 0)
+	testing.expect(t, city_lot(c, fx, fy).pollution > 0)
 	testing.expect(t, bulldoze(c, fx, fy))
-	testing.expect_value(t, lot_pollution(c, fx, fy), f32(0))
+	testing.expect_value(t, city_lot(c, fx, fy).pollution, f32(0))
 }
 
 @(test)
@@ -1599,10 +1630,10 @@ bulldoze_factory_raises_land_value_without_tick :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	fx, fy := p[2][0], p[2][1]
 	expect_building(t, c, fx, fy, .Factory)
-	testing.expect(t, lot_pollution(c, fx, fy) > 0)
-	before := lot_land_value(c, fx, fy)
+	testing.expect(t, city_lot(c, fx, fy).pollution > 0)
+	before := city_lot(c, fx, fy).land_value
 	testing.expect(t, bulldoze(c, fx, fy))
-	testing.expect(t, lot_land_value(c, fx, fy) > before)
+	testing.expect(t, city_lot(c, fx, fy).land_value > before)
 }
 
 cardinal_pair :: proc(plots: [][2]int) -> (a, b: [2]int, ok: bool) {
@@ -1634,7 +1665,7 @@ pollution_spreads_to_cardinal_lots_and_decays :: proc(t: ^testing.T) {
 	grow_house_shop_factory(c, p[0], p[1], p[2])
 	tick(c, pick_first)
 	fx, fy := p[2][0], p[2][1]
-	src := lot_pollution(c, fx, fy)
+	src := city_lot(c, fx, fy).pollution
 	found := false
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for n in cardinal {
@@ -1642,14 +1673,14 @@ pollution_spreads_to_cardinal_lots_and_decays :: proc(t: ^testing.T) {
 		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
 			continue
 		}
-		mid := lot_pollution(c, nx, ny)
+		mid := city_lot(c, nx, ny).pollution
 		testing.expect(t, mid > 0)
 		testing.expect(t, mid < src)
 		n2x, n2y := fx + 2 * n[0], fy + 2 * n[1]
 		if n2x < 0 || n2y < 0 || n2x >= MAP_SIZE || n2y >= MAP_SIZE {
 			continue
 		}
-		testing.expect(t, lot_pollution(c, n2x, n2y) < mid)
+		testing.expect(t, city_lot(c, n2x, n2y).pollution < mid)
 		found = true
 		break
 	}
@@ -1663,7 +1694,7 @@ supplied_plot_touching_lake :: proc(c: ^City) -> (x, y, lx, ly: int, ok: bool) {
 			if !is_empty_grass(c, x, y) {
 				continue
 			}
-			if !lot_powered(c, x, y) || !lot_watered(c, x, y) || !plot_touches_road(c, x, y) {
+			if !city_lot(c, x, y).powered || !city_lot(c, x, y).watered || !plot_touches_road(c, x, y) {
 				continue
 			}
 			for n in cardinal {
@@ -1693,13 +1724,13 @@ roads_and_lakes_hold_pollution :: proc(t: ^testing.T) {
 	grow_house_shop_factory(c, house, shop, {fx, fy})
 	tick(c, pick_first)
 	expect_building(t, c, fx, fy, .Factory)
-	testing.expect(t, lot_pollution(c, lx, ly) > 0)
+	testing.expect(t, city_lot(c, lx, ly).pollution > 0)
 	rx, ry, road := find_cardinal_road(c, fx, fy)
 	testing.expect(t, road)
-	testing.expect(t, lot_pollution(c, rx, ry) > 0)
+	testing.expect(t, city_lot(c, rx, ry).pollution > 0)
 	ox, oy := fx + (lx - fx) * 2, fy + (ly - fy) * 2
 	if ox >= 0 && oy >= 0 && ox < MAP_SIZE && oy < MAP_SIZE {
-		testing.expect(t, lot_pollution(c, ox, oy) > 0)
+		testing.expect(t, city_lot(c, ox, oy).pollution > 0)
 	}
 }
 
@@ -1734,9 +1765,15 @@ local_pollution_nibbles_houses_not_shops_or_factories :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	hh, hok := building_health_at(c, house[0], house[1])
-	sh, sok := building_health_at(c, shop[0], shop[1])
-	fh, fok := building_health_at(c, factory[0], factory[1])
+	hh_occ := city_lot(c, house[0], house[1]).occupant
+	hh := hh_occ.health
+	hok := hh_occ.present
+	o24 := city_lot(c, shop[0], shop[1]).occupant
+	sh := o24.health
+	sok := o24.present
+	o25 := city_lot(c, factory[0], factory[1]).occupant
+	fh := o25.health
+	fok := o25.present
 	testing.expect(t, hok && sok && fok)
 	testing.expect(t, hh < 1)
 	testing.expect_value(t, sh, f32(1))
@@ -1769,7 +1806,9 @@ pollution_does_not_nibble_a_park :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	ph, pok := building_health_at(c, park[0], park[1])
+	ph_occ := city_lot(c, park[0], park[1]).occupant
+	ph := ph_occ.health
+	pok := ph_occ.present
 	testing.expect(t, pok)
 	testing.expect_value(t, ph, f32(1))
 }
@@ -1783,7 +1822,7 @@ save_then_load_keeps_pollution_belt :: proc(t: ^testing.T) {
 	grow_house_shop_factory(c, p[0], p[1], p[2])
 	tick(c, pick_first)
 	fx, fy := p[2][0], p[2][1]
-	want := lot_pollution(c, fx, fy)
+	want := city_lot(c, fx, fy).pollution
 	testing.expect(t, want > 0)
 	path := "city_pollution.save"
 	defer os.remove(path)
@@ -1791,10 +1830,10 @@ save_then_load_keeps_pollution_belt :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	testing.expect_value(t, lot_pollution(loaded, fx, fy), want)
+	testing.expect_value(t, city_lot(loaded, fx, fy).pollution, want)
 	rx, ry, road := find_cardinal_road(loaded, fx, fy)
 	testing.expect(t, road)
-	testing.expect_value(t, lot_pollution(loaded, rx, ry), lot_pollution(c, rx, ry))
+	testing.expect_value(t, city_lot(loaded, rx, ry).pollution, city_lot(c, rx, ry).pollution)
 }
 
 @(test)
@@ -1803,9 +1842,9 @@ park_covers_without_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	testing.expect(t, !lot_powered(c, 1, 0))
-	testing.expect(t, lot_covered(c, 1, 0, .Park))
-	testing.expect(t, lot_covered(c, 2, 0, .Park))
+	testing.expect(t, !city_lot(c, 1, 0).powered)
+	testing.expect(t, city_lot(c, 1, 0).park_coverage)
+	testing.expect(t, city_lot(c, 2, 0).park_coverage)
 }
 
 @(test)
@@ -1814,9 +1853,9 @@ school_has_no_coverage_without_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .School))
-	testing.expect(t, !lot_powered(c, 1, 0))
-	testing.expect(t, !lot_education(c, 1, 0))
-	testing.expect(t, !lot_education(c, 2, 0))
+	testing.expect(t, !city_lot(c, 1, 0).powered)
+	testing.expect(t, !city_lot(c, 1, 0).education)
+	testing.expect(t, !city_lot(c, 2, 0).education)
 }
 
 @(test)
@@ -1826,10 +1865,10 @@ powered_school_covers_a_square_through_roads :: proc(t: ^testing.T) {
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
 	testing.expect(t, stamp(c, 0, 1, .School))
-	testing.expect(t, lot_powered(c, 0, 1))
-	testing.expect(t, lot_education(c, 0, 1))
-	testing.expect(t, lot_education(c, 0, 0))
-	testing.expect(t, !lot_education(c, 20, 20))
+	testing.expect(t, city_lot(c, 0, 1).powered)
+	testing.expect(t, city_lot(c, 0, 1).education)
+	testing.expect(t, city_lot(c, 0, 0).education)
+	testing.expect(t, !city_lot(c, 20, 20).education)
 }
 
 @(test)
@@ -1838,8 +1877,8 @@ park_raises_land_value_without_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	testing.expect(t, !lot_powered(c, 2, 0))
-	testing.expect(t, lot_land_value(c, 2, 0) > lot_land_value(c, 20, 20))
+	testing.expect(t, !city_lot(c, 2, 0).powered)
+	testing.expect(t, city_lot(c, 2, 0).land_value > city_lot(c, 20, 20).land_value)
 }
 
 is_empty_grass :: proc(c: ^City, x, y: int) -> bool {
@@ -1847,8 +1886,7 @@ is_empty_grass :: proc(c: ^City, x, y: int) -> bool {
 		return false
 	}
 	lot := city_lot(c, x, y)
-	_, occupied := building_kind_at(c, x, y)
-	return lot.kind == .Plot && lot.terrain == .Grass && !occupied
+	return lot.kind == .Plot && lot.terrain == .Grass && !lot.occupant.present
 }
 
 in_rect :: proc(x, y, x0, y0, w, h: int) -> bool {
@@ -1915,7 +1953,7 @@ connect_plot_to_network :: proc(c: ^City, x, y, fx, fy: int) -> bool {
 rect_supplied :: proc(c: ^City, x, y: int) -> bool {
 	for dy in 0 ..< 2 {
 		for dx in 0 ..< 2 {
-			if !lot_powered(c, x + dx, y + dy) || !lot_watered(c, x + dx, y + dy) {
+			if !city_lot(c, x + dx, y + dy).powered || !city_lot(c, x + dx, y + dy).watered {
 				return false
 			}
 		}
@@ -1940,7 +1978,7 @@ supplied_2x2 :: proc(c: ^City) -> (x, y: int, ok: bool) {
 			near := false
 			for dy in 0 ..< 2 {
 				for dx in 0 ..< 2 {
-					if lot_powered(c, x + dx, y + dy) && lot_watered(c, x + dx, y + dy) {
+					if city_lot(c, x + dx, y + dy).powered && city_lot(c, x + dx, y + dy).watered {
 						near = true
 					}
 				}
@@ -2006,14 +2044,15 @@ low_land_value_births_a_1x1_even_with_four_plots :: proc(t: ^testing.T) {
 	n := 0
 	for dy in 0 ..< 2 {
 		for dx in 0 ..< 2 {
-			_, occupied := building_kind_at(c, x + dx, y + dy)
+			occupied := city_lot(c, x + dx, y + dy).occupant.present
 			if occupied {
 				n += 1
 			}
 		}
 	}
 	testing.expect_value(t, n, 1)
-	size, nw := building_northwest_at(c, x, y)
+	size := city_lot(c, x, y).occupant.size
+	nw := city_lot(c, x, y).occupant.northwest
 	testing.expect(t, nw)
 	testing.expect_value(t, size, 1)
 	expect_building(t, c, x, y, .House)
@@ -2044,7 +2083,9 @@ new_house_is_level_1 :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	paint_zone(c, p[0][0], p[0][1], .Residential)
 	await_finished(c, p[0][0], p[0][1])
-	lv, lok := building_level_at(c, p[0][0], p[0][1])
+	lv_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(1))
 }
@@ -2060,7 +2101,7 @@ stamp_near :: proc(c: ^City, x, y: int, kind: Building_Kind) -> bool {
 			if px == x && py == y {
 				continue
 			}
-			if kind != .Park && !lot_powered(c, px, py) {
+			if kind != .Park && !city_lot(c, px, py).powered {
 				continue
 			}
 			if stamp(c, px, py, kind) {
@@ -2081,12 +2122,16 @@ house_needs_school_to_reach_level_2 :: proc(t: ^testing.T) {
 	testing.expect(t, stamp_near(c, hx, hy, .Park))
 	paint_zone(c, hx, hy, .Residential)
 	await_finished(c, hx, hy)
-	lv, lok := building_level_at(c, hx, hy)
+	lv_occ := city_lot(c, hx, hy).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(1))
 	testing.expect(t, stamp_near(c, hx, hy, .School))
 	tick(c, pick_first)
-	lv, lok = building_level_at(c, hx, hy)
+	o29 := city_lot(c, hx, hy).occupant
+	lv = o29.level
+	lok = o29.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
 	testing.expect_value(t, city_population(c), 8)
@@ -2108,16 +2153,22 @@ house_needs_hospital_to_reach_level_3 :: proc(t: ^testing.T) {
 	testing.expect(t, stamp_near(c, hx, hy, .Park))
 	testing.expect(t, stamp_near(c, hx, hy, .School))
 	tick(c, pick_first)
-	lv, lok := building_level_at(c, hx, hy)
+	lv_occ := city_lot(c, hx, hy).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
 	tick(c, pick_first)
-	lv, lok = building_level_at(c, hx, hy)
+	o31 := city_lot(c, hx, hy).occupant
+	lv = o31.level
+	lok = o31.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
 	testing.expect(t, stamp_near(c, hx, hy, .Hospital))
 	tick(c, pick_first)
-	lv, lok = building_level_at(c, hx, hy)
+	o32 := city_lot(c, hx, hy).occupant
+	lv = o32.level
+	lok = o32.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(3))
 	testing.expect_value(t, city_population(c), 12)
@@ -2140,11 +2191,15 @@ at_most_one_house_levels_per_tick :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	testing.expect(t, stamp_near(c, p[0][0], p[0][1], .Park))
 	testing.expect(t, stamp_near(c, p[0][0], p[0][1], .School))
-	testing.expect(t, lot_covered(c, p[1][0], p[1][1], .Park))
-	testing.expect(t, lot_education(c, p[1][0], p[1][1]))
+	testing.expect(t, city_lot(c, p[1][0], p[1][1]).park_coverage)
+	testing.expect(t, city_lot(c, p[1][0], p[1][1]).education)
 	tick(c, pick_first)
-	a, aok := building_level_at(c, p[0][0], p[0][1])
-	b, bok := building_level_at(c, p[1][0], p[1][1])
+	a_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	a := a_occ.level
+	aok := a_occ.present
+	o34 := city_lot(c, p[1][0], p[1][1]).occupant
+	b := o34.level
+	bok := o34.present
 	testing.expect(t, aok && bok)
 	testing.expect(t, a == 2 && b == 1 || a == 1 && b == 2)
 }
@@ -2161,10 +2216,13 @@ level_up_does_not_grow_the_footprint :: proc(t: ^testing.T) {
 	await_finished(c, hx, hy)
 	testing.expect(t, stamp_near(c, hx, hy, .School))
 	tick(c, pick_first)
-	lv, lok := building_level_at(c, hx, hy)
+	lv_occ := city_lot(c, hx, hy).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
-	size, nw := building_northwest_at(c, hx, hy)
+	size := city_lot(c, hx, hy).occupant.size
+	nw := city_lot(c, hx, hy).occupant.northwest
 	testing.expect(t, nw)
 	testing.expect_value(t, size, 1)
 }
@@ -2188,17 +2246,19 @@ abandoned_house_never_levels :: proc(t: ^testing.T) {
 	testing.expect(t, bulldoze(c, tx, ty))
 	for _ in 0 ..< 80 {
 		tick(c, pick_first)
-		h, health_ok := building_health_at(c, hx, hy)
-		testing.expect(t, health_ok)
-		if h <= HEALTH_ABANDONED {
+		o36 := city_lot(c, hx, hy).occupant
+		testing.expect(t, o36.present)
+		if o36.band == .Abandoned {
 			break
 		}
 	}
-	h, health_ok := building_health_at(c, hx, hy)
-	testing.expect(t, health_ok)
-	testing.expect(t, h <= HEALTH_ABANDONED)
+	o37 := city_lot(c, hx, hy).occupant
+	testing.expect(t, o37.present)
+	testing.expect_value(t, o37.band, Health_Band.Abandoned)
 	tick(c, pick_first)
-	lv, lok := building_level_at(c, hx, hy)
+	o38 := city_lot(c, hx, hy).occupant
+	lv := o38.level
+	lok := o38.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(1))
 }
@@ -2216,7 +2276,9 @@ save_then_load_keeps_level_and_footprint :: proc(t: ^testing.T) {
 		}
 	}
 	await_finished(c, x, y)
-	lv, lok := building_level_at(c, x, y)
+	lv_occ := city_lot(c, x, y).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	path := "city_level.save"
 	defer os.remove(path)
@@ -2224,7 +2286,9 @@ save_then_load_keeps_level_and_footprint :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	llv, llok := building_level_at(loaded, x, y)
+	o40 := city_lot(loaded, x, y).occupant
+	llv := o40.level
+	llok := o40.present
 	testing.expect(t, llok)
 	testing.expect_value(t, llv, lv)
 	expect_footprint(t, loaded, x, y, 2, .House)
@@ -2241,10 +2305,10 @@ unpowered_hospital_police_firehouse_have_no_coverage :: proc(t: ^testing.T) {
 	testing.expect(t, stamp(c, 0, 1, .Hospital))
 	testing.expect(t, stamp(c, 1, 1, .Police))
 	testing.expect(t, stamp(c, 2, 1, .Firehouse))
-	testing.expect(t, !lot_powered(c, 0, 1))
-	testing.expect(t, !lot_covered(c, 0, 1, .Hospital))
-	testing.expect(t, !lot_covered(c, 1, 1, .Police))
-	testing.expect(t, !lot_covered(c, 2, 1, .Firehouse))
+	testing.expect(t, !city_lot(c, 0, 1).powered)
+	testing.expect(t, !city_lot(c, 0, 1).hospital_coverage)
+	testing.expect(t, !city_lot(c, 1, 1).police_coverage)
+	testing.expect(t, !city_lot(c, 2, 1).firehouse_coverage)
 }
 
 @(test)
@@ -2261,8 +2325,8 @@ high_land_value_births_a_2x2_shop :: proc(t: ^testing.T) {
 				continue
 			}
 			if is_empty_grass(c, px, py) &&
-			   lot_powered(c, px, py) &&
-			   lot_watered(c, px, py) &&
+			   city_lot(c, px, py).powered &&
+			   city_lot(c, px, py).watered &&
 			   plot_touches_road(c, px, py) {
 				rx, ry = px, py
 				found = true
@@ -2346,10 +2410,10 @@ traffic_is_grown_buildings_over_road_lots :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	expect_building(t, c, house[0], house[1], .House)
 	expect_building(t, c, shop[0], shop[1], .Shop)
-	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+	testing.expect_value(t, city_lot(c, rx, ry).traffic, f32(1))
 	testing.expect(t, paint_road(c, 0, 0))
-	testing.expect_value(t, lot_traffic(c, 0, 0), f32(0))
-	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+	testing.expect_value(t, city_lot(c, 0, 0).traffic, f32(0))
+	testing.expect_value(t, city_lot(c, rx, ry).traffic, f32(1))
 }
 
 @(test)
@@ -2358,20 +2422,28 @@ jammed_component_nibbles_grown_buildings_not_facilities :: proc(t: ^testing.T) {
 	defer free(c)
 	house, shop, rx, ry, ok := jammed_house_and_shop(c)
 	testing.expect(t, ok)
-	testing.expect_value(t, lot_traffic(c, rx, ry), f32(1))
+	testing.expect_value(t, city_lot(c, rx, ry).traffic, f32(1))
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	sh, sok := building_health_at(c, shop[0], shop[1])
-	hh, hok := building_health_at(c, house[0], house[1])
+	sh_occ := city_lot(c, shop[0], shop[1]).occupant
+	sh := sh_occ.health
+	sok := sh_occ.present
+	o42 := city_lot(c, house[0], house[1]).occupant
+	hh := o42.health
+	hok := o42.present
 	testing.expect(t, sok && hok)
 	testing.expect(t, sh < 1)
 	testing.expect(t, hh < 1)
 	sx, sy, station := find_building(c, .Station)
 	tx, ty, tower := find_building(c, .Tower)
 	testing.expect(t, station && tower)
-	sth, stok := building_health_at(c, sx, sy)
-	th, tok := building_health_at(c, tx, ty)
+	o43 := city_lot(c, sx, sy).occupant
+	sth := o43.health
+	stok := o43.present
+	o44 := city_lot(c, tx, ty).occupant
+	th := o44.health
+	tok := o44.present
 	testing.expect(t, stok && tok)
 	testing.expect_value(t, sth, f32(1))
 	testing.expect_value(t, th, f32(1))
@@ -2386,24 +2458,28 @@ painting_roads_on_the_component_relieves_the_nibble :: proc(t: ^testing.T) {
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	sh, sok := building_health_at(c, shop[0], shop[1])
+	sh_occ := city_lot(c, shop[0], shop[1]).occupant
+	sh := sh_occ.health
+	sok := sh_occ.present
 	testing.expect(t, sok)
 	testing.expect(t, sh < 1)
 	testing.expect(t, paint_extra_road_on_component(c, rx, ry))
-	testing.expect_value(t, lot_traffic(c, rx, ry), f32(2) / f32(3))
+	testing.expect_value(t, city_lot(c, rx, ry).traffic, f32(2) / f32(3))
 	for _ in 0 ..< 20 {
 		tick(c, pick_first)
 	}
-	recovered, rok := building_health_at(c, shop[0], shop[1])
+	o46 := city_lot(c, shop[0], shop[1]).occupant
+	recovered := o46.health
+	rok := o46.present
 	testing.expect(t, rok)
 	testing.expect(t, recovered > sh)
 }
 
 paint_extra_road_on_component :: proc(c: ^City, rx, ry: int) -> bool {
-	load := lot_traffic(c, rx, ry)
+	load := city_lot(c, rx, ry).traffic
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			if city_lot(c, x, y).kind != .Road || lot_traffic(c, x, y) != load {
+			if city_lot(c, x, y).kind != .Road || city_lot(c, x, y).traffic != load {
 				continue
 			}
 			px, py, ok := find_empty_cardinal_plot(c, x, y)
@@ -2427,8 +2503,8 @@ crime_is_higher_next_to_grown_buildings_than_far_away :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	await_finished(c, p[1][0], p[1][1])
 	tick(c, pick_first)
-	near := lot_crime(c, p[0][0], p[0][1])
-	far := lot_crime(c, 20, 20)
+	near := city_lot(c, p[0][0], p[0][1]).crime
+	far := city_lot(c, 20, 20).crime
 	testing.expect(t, near > far)
 }
 
@@ -2446,7 +2522,7 @@ unemployment_raises_crime :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	await_full_health(c, p[0][0], p[0][1])
 	shop := p[1]
-	before := lot_crime(c, shop[0], shop[1])
+	before := city_lot(c, shop[0], shop[1]).crime
 	far: [2]int
 	found := false
 	for q in p[2:] {
@@ -2461,7 +2537,7 @@ unemployment_raises_crime :: proc(t: ^testing.T) {
 	paint_zone(c, far[0], far[1], .Residential)
 	await_finished(c, far[0], far[1])
 	tick(c, pick_first)
-	testing.expect(t, lot_crime(c, shop[0], shop[1]) > before)
+	testing.expect(t, city_lot(c, shop[0], shop[1]).crime > before)
 }
 
 @(test)
@@ -2477,11 +2553,11 @@ police_coverage_lowers_crime :: proc(t: ^testing.T) {
 	await_finished(c, p[1][0], p[1][1])
 	tick(c, pick_first)
 	sx, sy := p[1][0], p[1][1]
-	before := lot_crime(c, sx, sy)
+	before := city_lot(c, sx, sy).crime
 	testing.expect(t, before > 0)
 	testing.expect(t, stamp_near(c, sx, sy, .Police))
-	testing.expect(t, lot_covered(c, sx, sy, .Police))
-	testing.expect(t, lot_crime(c, sx, sy) < before)
+	testing.expect(t, city_lot(c, sx, sy).police_coverage)
+	testing.expect(t, city_lot(c, sx, sy).crime < before)
 }
 
 @(test)
@@ -2500,7 +2576,7 @@ unpowered_police_does_not_lower_crime :: proc(t: ^testing.T) {
 	stx, sty, found := find_building(c, .Station)
 	testing.expect(t, found)
 	testing.expect(t, bulldoze(c, stx, sty))
-	before := lot_crime(c, sx, sy)
+	before := city_lot(c, sx, sy).crime
 	testing.expect(t, before > 0)
 	ensure_stamp_money(c)
 	stamped := false
@@ -2516,8 +2592,8 @@ unpowered_police_does_not_lower_crime :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, stamped)
-	testing.expect(t, !lot_covered(c, sx, sy, .Police))
-	testing.expect_value(t, lot_crime(c, sx, sy), before)
+	testing.expect(t, !city_lot(c, sx, sy).police_coverage)
+	testing.expect_value(t, city_lot(c, sx, sy).crime, before)
 }
 
 @(test)
@@ -2533,15 +2609,23 @@ crime_nibbles_shops_not_houses :: proc(t: ^testing.T) {
 	await_finished(c, house[0], house[1])
 	tick(c, pick_first)
 	await_finished(c, shop[0], shop[1])
-	testing.expect(t, lot_crime(c, shop[0], shop[1]) >= CRIME_HIGH)
-	house_before, house_ok := building_health_at(c, house[0], house[1])
-	shop_before, shop_ok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, city_lot(c, shop[0], shop[1]).crime >= CRIME_HIGH)
+	house_before_occ := city_lot(c, house[0], house[1]).occupant
+	house_before := house_before_occ.health
+	house_ok := house_before_occ.present
+	o48 := city_lot(c, shop[0], shop[1]).occupant
+	shop_before := o48.health
+	shop_ok := o48.present
 	testing.expect(t, house_ok && shop_ok)
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	house_after, house_after_ok := building_health_at(c, house[0], house[1])
-	shop_after, shop_after_ok := building_health_at(c, shop[0], shop[1])
+	o49 := city_lot(c, house[0], house[1]).occupant
+	house_after := o49.health
+	house_after_ok := o49.present
+	o50 := city_lot(c, shop[0], shop[1]).occupant
+	shop_after := o50.health
+	shop_after_ok := o50.present
 	testing.expect(t, house_after_ok && shop_after_ok)
 	testing.expect(t, house_after >= house_before)
 	testing.expect(t, shop_after < shop_before)
@@ -2557,12 +2641,12 @@ crime_lowers_land_value :: proc(t: ^testing.T) {
 	testing.expect(t, pair)
 	paint_zone(c, house[0], house[1], .Residential)
 	paint_zone(c, shop[0], shop[1], .Commercial)
-	before := lot_land_value(c, shop[0], shop[1])
+	before := city_lot(c, shop[0], shop[1]).land_value
 	await_finished(c, house[0], house[1])
 	tick(c, pick_first)
 	await_finished(c, shop[0], shop[1])
-	testing.expect(t, lot_crime(c, shop[0], shop[1]) > 0)
-	testing.expect(t, lot_land_value(c, shop[0], shop[1]) < before)
+	testing.expect(t, city_lot(c, shop[0], shop[1]).crime > 0)
+	testing.expect(t, city_lot(c, shop[0], shop[1]).land_value < before)
 }
 
 @(test)
@@ -2578,14 +2662,14 @@ happiness_is_not_an_input_to_crime :: proc(t: ^testing.T) {
 	tick(c, pick_first)
 	tick(c, pick_first)
 	tick(c, pick_first)
-	crime := lot_crime(c, shop[0], shop[1])
+	crime := city_lot(c, shop[0], shop[1]).crime
 	hap := city_happiness(c)
 	city_set_tax(c, TAX_HIGH)
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
 	testing.expect(t, city_happiness(c) < hap)
-	testing.expect_value(t, lot_crime(c, shop[0], shop[1]), crime)
+	testing.expect_value(t, city_lot(c, shop[0], shop[1]).crime, crime)
 }
 
 @(test)
@@ -2691,11 +2775,11 @@ outage_month_stations_supply_no_power :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
-	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, city_lot(c, 0, 1).powered)
 	tick(c, pick_outage)
 	testing.expect(t, city_outage(c))
-	testing.expect(t, !lot_powered(c, 0, 1))
-	testing.expect(t, !lot_powered(c, 1, 0))
+	testing.expect(t, !city_lot(c, 0, 1).powered)
+	testing.expect(t, !city_lot(c, 1, 0).powered)
 }
 
 @(test)
@@ -2705,12 +2789,12 @@ outage_dries_taps_when_towers_lose_power :: proc(t: ^testing.T) {
 	p, ok := supplied_plots(c, 1)
 	testing.expect(t, ok)
 	x, y := p[0][0], p[0][1]
-	testing.expect(t, lot_powered(c, x, y))
-	testing.expect(t, lot_watered(c, x, y))
+	testing.expect(t, city_lot(c, x, y).powered)
+	testing.expect(t, city_lot(c, x, y).watered)
 	tick(c, pick_outage)
 	testing.expect(t, city_outage(c))
-	testing.expect(t, !lot_powered(c, x, y))
-	testing.expect(t, !lot_watered(c, x, y))
+	testing.expect(t, !city_lot(c, x, y).powered)
+	testing.expect(t, !city_lot(c, x, y).watered)
 }
 
 @(test)
@@ -2720,15 +2804,15 @@ stations_supply_again_after_outage_month_without_restamp :: proc(t: ^testing.T) 
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station))
 	tick(c, pick_outage)
-	testing.expect(t, !lot_powered(c, 0, 1))
+	testing.expect(t, !city_lot(c, 0, 1).powered)
 	for _ in 1 ..< MONTH_TICKS {
 		tick(c, pick_first)
 		testing.expect(t, city_outage(c))
-		testing.expect(t, !lot_powered(c, 0, 1))
+		testing.expect(t, !city_lot(c, 0, 1).powered)
 	}
 	tick(c, pick_first)
 	testing.expect(t, !city_outage(c))
-	testing.expect(t, lot_powered(c, 0, 1))
+	testing.expect(t, city_lot(c, 0, 1).powered)
 	expect_building(t, c, 1, 0, .Station)
 }
 
@@ -2741,7 +2825,7 @@ save_then_load_keeps_ticks_and_outage :: proc(t: ^testing.T) {
 	tick(c, pick_outage)
 	testing.expect(t, city_outage(c))
 	testing.expect_value(t, city_day(c), 2)
-	testing.expect(t, !lot_powered(c, 0, 1))
+	testing.expect(t, !city_lot(c, 0, 1).powered)
 	path := "city_month.save"
 	defer os.remove(path)
 	testing.expect(t, city_save(c, path))
@@ -2752,7 +2836,7 @@ save_then_load_keeps_ticks_and_outage :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_year(loaded), city_year(c))
 	testing.expect_value(t, city_month(loaded), city_month(c))
 	testing.expect_value(t, city_day(loaded), city_day(c))
-	testing.expect(t, !lot_powered(loaded, 0, 1))
+	testing.expect(t, !city_lot(loaded, 0, 1).powered)
 	expect_building(t, loaded, 1, 0, .Station)
 }
 
@@ -2784,10 +2868,10 @@ month_may_ignite_a_grown_building_without_firehouse :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	expect_building(t, c, hx, hy, .House)
-	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+	testing.expect_value(t, city_lot(c, hx, hy).fire, f32(0))
 	advance_month(c, pick_ignite)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
-	testing.expect(t, lot_fire(c, hx, hy) <= 1)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
+	testing.expect(t, city_lot(c, hx, hy).fire <= 1)
 }
 
 @(test)
@@ -2805,9 +2889,9 @@ firehouse_coverage_blocks_ignition :: proc(t: ^testing.T) {
 	hx, hy := p[0][0], p[0][1]
 	expect_building(t, c, hx, hy, .House)
 	testing.expect(t, stamp(c, p[2][0], p[2][1], .Firehouse))
-	testing.expect(t, lot_covered(c, hx, hy, .Firehouse))
+	testing.expect(t, city_lot(c, hx, hy).firehouse_coverage)
 	advance_month(c, pick_ignite)
-	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+	testing.expect_value(t, city_lot(c, hx, hy).fire, f32(0))
 }
 
 @(test)
@@ -2824,10 +2908,10 @@ fire_lingers_through_a_month_without_firehouse :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite)
-	got := lot_fire(c, hx, hy)
+	got := city_lot(c, hx, hy).fire
 	testing.expect(t, got > 0)
 	advance_month(c, pick_first)
-	testing.expect_value(t, lot_fire(c, hx, hy), got)
+	testing.expect_value(t, city_lot(c, hx, hy).fire, got)
 }
 
 pick_spread :: proc(n: int) -> int {
@@ -2851,9 +2935,9 @@ fire_spreads_to_a_cardinal_plot_except_road_lake_or_rock :: proc(t: ^testing.T) 
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
 	advance_month(c, pick_spread)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
 	spread := false
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for n in cardinal {
@@ -2863,10 +2947,10 @@ fire_spreads_to_a_cardinal_plot_except_road_lake_or_rock :: proc(t: ^testing.T) 
 		}
 		lot := city_lot(c, nx, ny)
 		if lot.kind == .Road || lot.terrain == .Lake || lot.terrain == .Rock {
-			testing.expect_value(t, lot_fire(c, nx, ny), f32(0))
+			testing.expect_value(t, city_lot(c, nx, ny).fire, f32(0))
 			continue
 		}
-		if lot_fire(c, nx, ny) > 0 {
+		if city_lot(c, nx, ny).fire > 0 {
 			spread = true
 		}
 	}
@@ -2887,13 +2971,17 @@ building_on_fire_takes_a_health_nibble :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
-	h0, okh := building_health_at(c, hx, hy)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
+	h0_occ := city_lot(c, hx, hy).occupant
+	h0 := h0_occ.health
+	okh := h0_occ.present
 	testing.expect(t, okh)
 	testing.expect(t, h0 < 1)
-	testing.expect(t, h0 > HEALTH_ABANDONED)
+	testing.expect(t, city_lot(c, hx, hy).occupant.band != .Abandoned)
 	tick(c, pick_first)
-	h1, ok1 := building_health_at(c, hx, hy)
+	o52 := city_lot(c, hx, hy).occupant
+	h1 := o52.health
+	ok1 := o52.present
 	testing.expect(t, ok1)
 	testing.expect_value(t, h1, h0 - HEALTH_NIBBLE)
 	testing.expect(t, h1 > 0)
@@ -2913,21 +3001,21 @@ firehouse_coverage_decays_intensity :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite)
-	before := lot_fire(c, hx, hy)
+	before := city_lot(c, hx, hy).fire
 	testing.expect(t, before > 0)
 	testing.expect(t, stamp(c, p[2][0], p[2][1], .Firehouse))
-	testing.expect(t, lot_covered(c, hx, hy, .Firehouse))
+	testing.expect(t, city_lot(c, hx, hy).firehouse_coverage)
 	advance_month(c, pick_first)
-	after := lot_fire(c, hx, hy)
+	after := city_lot(c, hx, hy).fire
 	testing.expect(t, after < before)
 	testing.expect(t, after > 0)
 	for _ in 0 ..< 8 {
-		if lot_fire(c, hx, hy) == 0 {
+		if city_lot(c, hx, hy).fire == 0 {
 			break
 		}
 		advance_month(c, pick_first)
 	}
-	testing.expect_value(t, lot_fire(c, hx, hy), f32(0))
+	testing.expect_value(t, city_lot(c, hx, hy).fire, f32(0))
 }
 
 pick_ignite_and_outage :: proc(n: int) -> int {
@@ -2952,7 +3040,7 @@ fire_and_outage_may_happen_in_the_same_month :: proc(t: ^testing.T) {
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite_and_outage)
 	testing.expect(t, city_outage(c))
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
 }
 
 @(test)
@@ -2969,7 +3057,7 @@ save_then_load_keeps_fire_intensity :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	hx, hy := p[0][0], p[0][1]
 	advance_month(c, pick_ignite)
-	want := lot_fire(c, hx, hy)
+	want := city_lot(c, hx, hy).fire
 	testing.expect(t, want > 0)
 	path := "city_fire.save"
 	defer os.remove(path)
@@ -2977,7 +3065,7 @@ save_then_load_keeps_fire_intensity :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	testing.expect_value(t, lot_fire(loaded, hx, hy), want)
+	testing.expect_value(t, city_lot(loaded, hx, hy).fire, want)
 	expect_building(t, loaded, hx, hy, .House)
 }
 
@@ -2991,12 +3079,16 @@ new_house_enters_construction_and_occupies_its_plot :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
 	expect_building(t, c, hx, hy, .House)
-	testing.expect(t, building_construction_at(c, hx, hy))
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	testing.expect(t, in_construction(c, hx, hy))
+	rem_occ := city_lot(c, hx, hy).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
 	testing.expect_value(t, city_population(c), 0)
-	lv, lok := building_level_at(c, hx, hy)
+	o54 := city_lot(c, hx, hy).occupant
+	lv := o54.level
+	lok := o54.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(0))
 }
@@ -3011,19 +3103,27 @@ construction_finishes_after_a_month_of_ticks_from_birth :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	for _ in 0 ..< MONTH_TICKS - 1 {
 		tick(c, pick_first)
-		rem, rok := building_construction_remaining_at(c, hx, hy)
+		rem_occ := city_lot(c, hx, hy).occupant
+		rem := rem_occ.remaining
+		rok := rem_occ.present
 		testing.expect(t, rok)
 		testing.expect(t, rem > 0)
 		testing.expect_value(t, city_population(c), 0)
 	}
 	tick(c, pick_first)
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	o56 := city_lot(c, hx, hy).occupant
+	rem := o56.remaining
+	rok := o56.present
 	testing.expect(t, rok)
 	testing.expect_value(t, rem, u8(0))
-	lv, lok := building_level_at(c, hx, hy)
+	o57 := city_lot(c, hx, hy).occupant
+	lv := o57.level
+	lok := o57.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(1))
-	h, hok := building_health_at(c, hx, hy)
+	o58 := city_lot(c, hx, hy).occupant
+	h := o58.health
+	hok := o58.present
 	testing.expect(t, hok)
 	testing.expect_value(t, h, f32(1))
 	testing.expect_value(t, city_population(c), 4)
@@ -3031,8 +3131,8 @@ construction_finishes_after_a_month_of_ticks_from_birth :: proc(t: ^testing.T) {
 
 await_finished :: proc(c: ^City, x, y: int) {
 	for _ in 0 ..< MONTH_TICKS {
-		rem, ok := building_construction_remaining_at(c, x, y)
-		if ok && rem == 0 {
+		occ := city_lot(c, x, y).occupant
+		if occ.present && occ.remaining == 0 {
 			return
 		}
 		tick(c, pick_first)
@@ -3041,9 +3141,8 @@ await_finished :: proc(c: ^City, x, y: int) {
 
 await_full_health :: proc(c: ^City, x, y: int) {
 	for _ in 0 ..< 80 {
-		rem, rok := building_construction_remaining_at(c, x, y)
-		h, hok := building_health_at(c, x, y)
-		if rok && rem == 0 && hok && h == 1 {
+		occ := city_lot(c, x, y).occupant
+		if occ.present && occ.remaining == 0 && occ.health == 1 {
 			return
 		}
 		tick(c, pick_first)
@@ -3063,13 +3162,17 @@ construction_timer_runs_from_birth_not_the_calendar_month :: proc(t: ^testing.T)
 	paint_zone(c, hx, hy, .Residential)
 	for _ in 0 ..< MONTH_TICKS - 1 {
 		tick(c, pick_first)
-		rem, rok := building_construction_remaining_at(c, hx, hy)
+		rem_occ := city_lot(c, hx, hy).occupant
+		rem := rem_occ.remaining
+		rok := rem_occ.present
 		testing.expect(t, rok)
 		testing.expect(t, rem > 0)
 	}
 	testing.expect(t, city_month(c) != 1 || city_day(c) != MONTH_TICKS)
 	tick(c, pick_first)
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	o62 := city_lot(c, hx, hy).occupant
+	rem := o62.remaining
+	rok := o62.present
 	testing.expect(t, rok)
 	testing.expect_value(t, rem, u8(0))
 	testing.expect_value(t, city_population(c), 4)
@@ -3085,13 +3188,21 @@ two_houses_born_on_different_ticks_finish_at_different_times :: proc(t: ^testing
 	paint_zone(c, p[1][0], p[1][1], .Residential)
 	tick(c, pick_first)
 	tick(c, pick_first)
-	ra, aok := building_construction_remaining_at(c, p[0][0], p[0][1])
-	rb, bok := building_construction_remaining_at(c, p[1][0], p[1][1])
+	ra_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	ra := ra_occ.remaining
+	aok := ra_occ.present
+	o64 := city_lot(c, p[1][0], p[1][1]).occupant
+	rb := o64.remaining
+	bok := o64.present
 	testing.expect(t, aok && bok)
 	testing.expect(t, ra != rb)
 	await_finished(c, p[0][0], p[0][1])
-	ra, aok = building_construction_remaining_at(c, p[0][0], p[0][1])
-	rb, bok = building_construction_remaining_at(c, p[1][0], p[1][1])
+	o65 := city_lot(c, p[0][0], p[0][1]).occupant
+	ra = o65.remaining
+	aok = o65.present
+	o66 := city_lot(c, p[1][0], p[1][1]).occupant
+	rb = o66.remaining
+	bok = o66.present
 	testing.expect(t, aok && bok)
 	testing.expect_value(t, ra, u8(0))
 	testing.expect(t, rb > 0)
@@ -3110,16 +3221,22 @@ finishing_into_fire_nibbles_health :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
 	advance_month(c, pick_ignite)
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	rem_occ := city_lot(c, hx, hy).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
 	await_finished(c, hx, hy)
-	h0, hok := building_health_at(c, hx, hy)
+	o68 := city_lot(c, hx, hy).occupant
+	h0 := o68.health
+	hok := o68.present
 	testing.expect(t, hok)
 	testing.expect_value(t, h0, f32(1))
 	tick(c, pick_first)
-	h1, h1ok := building_health_at(c, hx, hy)
+	o69 := city_lot(c, hx, hy).occupant
+	h1 := o69.health
+	h1ok := o69.present
 	testing.expect(t, h1ok)
 	testing.expect(t, h1 < 1)
 }
@@ -3140,7 +3257,9 @@ new_shop_and_factory_enter_construction :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_population(c), 4)
 	tick(c, pick_first)
 	expect_building(t, c, sx, sy, .Shop)
-	srem, sok := building_construction_remaining_at(c, sx, sy)
+	srem_occ := city_lot(c, sx, sy).occupant
+	srem := srem_occ.remaining
+	sok := srem_occ.present
 	testing.expect(t, sok)
 	testing.expect(t, srem > 0)
 	testing.expect_value(t, city_jobs(c), 0)
@@ -3148,7 +3267,9 @@ new_shop_and_factory_enter_construction :: proc(t: ^testing.T) {
 	testing.expect_value(t, city_jobs(c), 4)
 	tick(c, pick_first)
 	expect_building(t, c, fx, fy, .Factory)
-	frem, fok := building_construction_remaining_at(c, fx, fy)
+	o71 := city_lot(c, fx, fy).occupant
+	frem := o71.remaining
+	fok := o71.present
 	testing.expect(t, fok)
 	testing.expect(t, frem > 0)
 	testing.expect_value(t, city_jobs(c), 4)
@@ -3160,10 +3281,14 @@ facilities_stamp_finished_without_construction :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	rem, rok := building_construction_remaining_at(c, 1, 0)
+	rem_occ := city_lot(c, 1, 0).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect_value(t, rem, u8(0))
-	h, hok := building_health_at(c, 1, 0)
+	o73 := city_lot(c, 1, 0).occupant
+	h := o73.health
+	hok := o73.present
 	testing.expect(t, hok)
 	testing.expect_value(t, h, f32(1))
 }
@@ -3182,7 +3307,9 @@ happiness_ignores_construction_so_an_unfinished_city_is_not_collapsing :: proc(t
 	testing.expect(t, station && tower)
 	testing.expect(t, bulldoze(c, sx, sy))
 	testing.expect(t, bulldoze(c, tx, ty))
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	rem_occ := city_lot(c, hx, hy).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
 	testing.expect_value(t, city_happiness(c), f32(1))
@@ -3199,15 +3326,21 @@ level_up_skips_construction_and_stays_instant_after_finish :: proc(t: ^testing.T
 	testing.expect(t, stamp_near(c, hx, hy, .School))
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
-	lv, lok := building_level_at(c, hx, hy)
+	lv_occ := city_lot(c, hx, hy).occupant
+	lv := lv_occ.level
+	lok := lv_occ.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(0))
 	await_finished(c, hx, hy)
-	lv, lok = building_level_at(c, hx, hy)
+	o76 := city_lot(c, hx, hy).occupant
+	lv = o76.level
+	lok = o76.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(1))
 	tick(c, pick_first)
-	lv, lok = building_level_at(c, hx, hy)
+	o77 := city_lot(c, hx, hy).occupant
+	lv = o77.level
+	lok = o77.present
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
 }
@@ -3224,16 +3357,20 @@ outage_does_not_freeze_construction_remaining :: proc(t: ^testing.T) {
 	}
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
-	testing.expect(t, building_construction_at(c, hx, hy))
+	testing.expect(t, in_construction(c, hx, hy))
 	advance_month(c, pick_outage)
 	testing.expect(t, city_outage(c))
-	testing.expect(t, building_construction_at(c, hx, hy))
-	before, bok := building_construction_remaining_at(c, hx, hy)
+	testing.expect(t, in_construction(c, hx, hy))
+	before_occ := city_lot(c, hx, hy).occupant
+	before := before_occ.remaining
+	bok := before_occ.present
 	testing.expect(t, bok)
 	testing.expect(t, before > 0)
 	tick(c, pick_first)
 	testing.expect(t, city_outage(c))
-	after, aok := building_construction_remaining_at(c, hx, hy)
+	o79 := city_lot(c, hx, hy).occupant
+	after := o79.remaining
+	aok := o79.present
 	testing.expect(t, aok)
 	testing.expect_value(t, after, before - 1)
 }
@@ -3251,13 +3388,11 @@ fire_may_sit_on_construction_without_a_health_nibble :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
 	advance_month(c, pick_ignite)
-	rem, rok := building_construction_remaining_at(c, hx, hy)
-	testing.expect(t, rok)
-	testing.expect(t, rem > 0)
-	testing.expect(t, lot_fire(c, hx, hy) > 0)
-	h, hok := building_health_at(c, hx, hy)
-	testing.expect(t, hok)
-	testing.expect_value(t, h, f32(0))
+	lot := city_lot(c, hx, hy)
+	testing.expect(t, lot.occupant.present && lot.occupant.status == .Construction)
+	testing.expect(t, lot.occupant.remaining > 0)
+	testing.expect(t, lot.fire > 0)
+	testing.expect_value(t, lot.occupant.band, Health_Band.None)
 }
 
 @(test)
@@ -3270,7 +3405,9 @@ construction_counts_for_traffic :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
 	tick(c, pick_first)
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	rem_occ := city_lot(c, hx, hy).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
@@ -3282,7 +3419,7 @@ construction_counts_for_traffic :: proc(t: ^testing.T) {
 			continue
 		}
 		if city_lot(c, nx, ny).kind == .Road {
-			load = lot_traffic(c, nx, ny)
+			load = city_lot(c, nx, ny).traffic
 			found = true
 			break
 		}
@@ -3300,7 +3437,9 @@ save_then_load_keeps_construction_remaining :: proc(t: ^testing.T) {
 	hx, hy := p[0][0], p[0][1]
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
-	want, rok := building_construction_remaining_at(c, hx, hy)
+	want_occ := city_lot(c, hx, hy).occupant
+	want := want_occ.remaining
+	rok := want_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, want > 0)
 	path := "city_construction.save"
@@ -3309,7 +3448,9 @@ save_then_load_keeps_construction_remaining :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	got, lok := building_construction_remaining_at(loaded, hx, hy)
+	o82 := city_lot(loaded, hx, hy).occupant
+	got := o82.remaining
+	lok := o82.present
 	testing.expect(t, lok)
 	testing.expect_value(t, got, want)
 	testing.expect_value(t, city_population(loaded), 0)
@@ -3335,20 +3476,15 @@ maintenance_cost :: proc(c: ^City) -> int {
 	facilities := 0
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			if city_lot(c, x, y).kind == .Road {
+			lot := city_lot(c, x, y)
+			if lot.kind == .Road {
 				roads += 1
 			}
-			_, nw := building_northwest_at(c, x, y)
-			if !nw {
+			occ := lot.occupant
+			if !occ.northwest || !occ.present {
 				continue
 			}
-			kind, ok := building_kind_at(c, x, y)
-			if !ok {
-				continue
-			}
-			switch kind {
-			case .House, .Shop, .Factory:
-			case .Station, .Tower, .Park, .School, .Police, .Firehouse, .Hospital:
+			if is_facility(occ.kind) {
 				facilities += 1
 			}
 		}
@@ -3468,7 +3604,7 @@ occupied_unpowered_lots_pull_power_percent_down :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	testing.expect(t, !lot_powered(c, 1, 0))
+	testing.expect(t, !city_lot(c, 1, 0).powered)
 	testing.expect_value(t, city_power_percent(c), f32(0))
 	testing.expect_value(t, city_water_percent(c), f32(0))
 }
@@ -3481,8 +3617,8 @@ power_percent_is_occupied_plots_with_power_over_occupied_plots :: proc(t: ^testi
 	testing.expect(t, stamp(c, 1, 0, .Station))
 	paint_road(c, 15, 15)
 	testing.expect(t, stamp(c, 15, 16, .Park))
-	testing.expect(t, lot_powered(c, 1, 0))
-	testing.expect(t, !lot_powered(c, 15, 16))
+	testing.expect(t, city_lot(c, 1, 0).powered)
+	testing.expect(t, !city_lot(c, 15, 16).powered)
 	testing.expect_value(t, city_power_percent(c), f32(0.5))
 	testing.expect_value(t, city_water_percent(c), f32(0))
 }
@@ -3503,10 +3639,10 @@ outage_drops_the_power_percent :: proc(t: ^testing.T) {
 empty_lot_is_not_northwest :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
-	_, ok := building_northwest_at(c, 0, 0)
+	ok := city_lot(c, 0, 0).occupant.northwest
 	testing.expect(t, !ok)
-	testing.expect(t, !building_abandoned_at(c, 0, 0))
-	testing.expect(t, !building_struggling_at(c, 0, 0))
+	testing.expect(t, city_lot(c, 0, 0).occupant.band != .Abandoned)
+	testing.expect(t, city_lot(c, 0, 0).occupant.band != .Struggling)
 }
 
 @(test)
@@ -3515,13 +3651,14 @@ park_northwest_is_1x1_at_its_plot :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	size, ok := building_northwest_at(c, 1, 0)
+	size := city_lot(c, 1, 0).occupant.size
+	ok := city_lot(c, 1, 0).occupant.northwest
 	testing.expect(t, ok)
 	testing.expect_value(t, size, 1)
-	_, neighbor := building_northwest_at(c, 2, 0)
+	neighbor := city_lot(c, 2, 0).occupant.northwest
 	testing.expect(t, !neighbor)
-	testing.expect(t, !building_abandoned_at(c, 1, 0))
-	testing.expect(t, !building_struggling_at(c, 1, 0))
+	testing.expect(t, city_lot(c, 1, 0).occupant.band != .Abandoned)
+	testing.expect(t, city_lot(c, 1, 0).occupant.band != .Struggling)
 }
 
 @(test)
@@ -3530,14 +3667,15 @@ station_2x2_northwest_is_only_that_plot :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station, 2))
-	size, ok := building_northwest_at(c, 1, 0)
+	size := city_lot(c, 1, 0).occupant.size
+	ok := city_lot(c, 1, 0).occupant.northwest
 	testing.expect(t, ok)
 	testing.expect_value(t, size, 2)
-	_, east := building_northwest_at(c, 2, 0)
+	east := city_lot(c, 2, 0).occupant.northwest
 	testing.expect(t, !east)
-	_, south := building_northwest_at(c, 1, 1)
+	south := city_lot(c, 1, 1).occupant.northwest
 	testing.expect(t, !south)
-	_, southeast := building_northwest_at(c, 2, 1)
+	southeast := city_lot(c, 2, 1).occupant.northwest
 	testing.expect(t, !southeast)
 }
 
@@ -3549,22 +3687,25 @@ construction_is_not_abandoned :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	paint_zone(c, p[0][0], p[0][1], .Residential)
 	tick(c, pick_first)
-	rem, rok := building_construction_remaining_at(c, p[0][0], p[0][1])
+	rem_occ := city_lot(c, p[0][0], p[0][1]).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
-	testing.expect(t, building_construction_at(c, p[0][0], p[0][1]))
-	size, nw := building_northwest_at(c, p[0][0], p[0][1])
+	testing.expect(t, in_construction(c, p[0][0], p[0][1]))
+	size := city_lot(c, p[0][0], p[0][1]).occupant.size
+	nw := city_lot(c, p[0][0], p[0][1]).occupant.northwest
 	testing.expect(t, nw)
 	testing.expect_value(t, size, 1)
-	testing.expect(t, !building_abandoned_at(c, p[0][0], p[0][1]))
-	testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).occupant.band != .Abandoned)
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).occupant.band != .Struggling)
 }
 
 @(test)
 empty_lot_is_not_construction :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
-	testing.expect(t, !building_construction_at(c, 0, 0))
+	testing.expect(t, !in_construction(c, 0, 0))
 }
 
 @(test)
@@ -3573,8 +3714,10 @@ park_is_not_construction :: proc(t: ^testing.T) {
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Park))
-	testing.expect(t, !building_construction_at(c, 1, 0))
-	rem, rok := building_construction_remaining_at(c, 1, 0)
+	testing.expect(t, !in_construction(c, 1, 0))
+	rem_occ := city_lot(c, 1, 0).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect_value(t, rem, u8(0))
 }
@@ -3588,10 +3731,12 @@ construction_ends_when_the_house_finishes :: proc(t: ^testing.T) {
 	hx, hy := p[0][0], p[0][1]
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
-	testing.expect(t, building_construction_at(c, hx, hy))
+	testing.expect(t, in_construction(c, hx, hy))
 	await_finished(c, hx, hy)
-	testing.expect(t, !building_construction_at(c, hx, hy))
-	rem, rok := building_construction_remaining_at(c, hx, hy)
+	testing.expect(t, !in_construction(c, hx, hy))
+	rem_occ := city_lot(c, hx, hy).occupant
+	rem := rem_occ.remaining
+	rok := rem_occ.present
 	testing.expect(t, rok)
 	testing.expect_value(t, rem, u8(0))
 }

@@ -29,8 +29,12 @@ A zone. It grows a Factory, not population.
 _Avoid_: Manufacturing, dirty commercial
 
 **Building**:
-The occupant of a rectangle of plots (1×1 or 2×2). Either a House, Shop, Factory, or Facility. Size is chosen at birth from land value and does not change. The rectangle starts at the northwest plot. Those plots all belong to that building. The stamp may be irregular pixels inside the rectangle. It stays until the player demolishes it or it is Abandoned.
+A House, Shop, Factory, or Facility on a rectangle of plots (1×1 or 2×2). Size is chosen at birth from land value and does not change. The rectangle starts at the northwest plot. Those plots all belong to that building. The stamp may be irregular pixels inside the rectangle. It stays until the player demolishes it or it is Abandoned.
 _Avoid_: Structure, agent, blob
+
+**Occupant**:
+The Building on a Lot as Inspect and stamps see it. Finished carries Health and its band; Construction has no Health.
+_Avoid_: tenant, resident, agent
 
 **House**:
 A residential building. Population is a base times level times the plots it occupies. It cannot go above level 1 without education, or above level 2 without Hospital coverage.

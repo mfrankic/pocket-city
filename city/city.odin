@@ -103,6 +103,7 @@ Occupant :: struct {
 	kind:      Building_Kind,
 	status:    Occupant_Status,
 	band:      Health_Band,
+	health:    f32,
 	remaining: u8,
 	level:     u8,
 	northwest: bool,
@@ -110,18 +111,22 @@ Occupant :: struct {
 }
 
 Lot :: struct {
-	kind:       Lot_Kind,
-	zone:       Zone,
-	terrain:    Terrain,
-	occupant:   Occupant,
-	powered:    bool,
-	watered:    bool,
-	education:  bool,
-	pollution:  f32,
-	land_value: f32,
-	traffic:    f32,
-	crime:      f32,
-	fire:       f32,
+	kind:                Lot_Kind,
+	zone:                Zone,
+	terrain:             Terrain,
+	occupant:            Occupant,
+	powered:             bool,
+	watered:             bool,
+	education:           bool,
+	park_coverage:       bool,
+	police_coverage:     bool,
+	firehouse_coverage:  bool,
+	hospital_coverage:   bool,
+	pollution:           f32,
+	land_value:          f32,
+	traffic:             f32,
+	crime:               f32,
+	fire:                f32,
 }
 
 @(private)
@@ -188,17 +193,21 @@ fill_terrain :: proc(c: ^City, x0, y0, w, h: int, terrain: Terrain) {
 city_lot :: proc(c: ^City, x, y: int) -> Lot {
 	s := c.lots[y * MAP_SIZE + x]
 	lot := Lot {
-		kind       = s.kind,
-		zone       = s.zone,
-		terrain    = s.terrain,
-		powered    = lot_powered(c, x, y),
-		watered    = lot_watered(c, x, y),
-		education  = lot_education(c, x, y),
-		pollution  = lot_pollution(c, x, y),
-		land_value = lot_land_value(c, x, y),
-		traffic    = lot_traffic(c, x, y),
-		crime      = lot_crime(c, x, y),
-		fire       = lot_fire(c, x, y),
+		kind                = s.kind,
+		zone                = s.zone,
+		terrain             = s.terrain,
+		powered             = lot_powered(c, x, y),
+		watered             = lot_watered(c, x, y),
+		education           = lot_education(c, x, y),
+		park_coverage       = coverage_at(c, x, y, .Park),
+		police_coverage     = coverage_at(c, x, y, .Police),
+		firehouse_coverage  = coverage_at(c, x, y, .Firehouse),
+		hospital_coverage   = coverage_at(c, x, y, .Hospital),
+		pollution           = lot_pollution(c, x, y),
+		land_value          = lot_land_value(c, x, y),
+		traffic             = lot_traffic(c, x, y),
+		crime               = lot_crime(c, x, y),
+		fire                = lot_fire(c, x, y),
 	}
 	b, found := building_at(c, x, y)
 	if !found {
@@ -212,6 +221,7 @@ city_lot :: proc(c: ^City, x, y: int) -> Lot {
 		lot.occupant.status = .Construction
 	} else {
 		lot.occupant.status = .Finished
+		lot.occupant.health = b.health
 		switch {
 		case building_abandoned_at(c, x, y):
 			lot.occupant.band = .Abandoned
@@ -251,30 +261,6 @@ building_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
 building_kind_at :: proc(c: ^City, x, y: int) -> (kind: Building_Kind, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.kind, found
-}
-
-@(private)
-building_health_at :: proc(c: ^City, x, y: int) -> (health: f32, ok: bool) {
-	b, found := building_at(c, x, y)
-	return b.health, found
-}
-
-@(private)
-building_level_at :: proc(c: ^City, x, y: int) -> (level: u8, ok: bool) {
-	b, found := building_at(c, x, y)
-	return b.level, found
-}
-
-@(private)
-building_construction_remaining_at :: proc(c: ^City, x, y: int) -> (remaining: u8, ok: bool) {
-	b, found := building_at(c, x, y)
-	return b.remaining, found
-}
-
-@(private)
-building_construction_at :: proc(c: ^City, x, y: int) -> bool {
-	b, ok := building_at(c, x, y)
-	return ok && b.remaining > 0
 }
 
 @(private)
@@ -584,10 +570,6 @@ lot_crime :: proc(c: ^City, x, y: int) -> f32 {
 @(private)
 lot_fire :: proc(c: ^City, x, y: int) -> f32 {
 	return c.fire[y * MAP_SIZE + x]
-}
-
-lot_covered :: proc(c: ^City, x, y: int, kind: Building_Kind) -> bool {
-	return coverage_at(c, x, y, kind)
 }
 
 @(private)

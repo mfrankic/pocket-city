@@ -222,7 +222,7 @@ stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask
 	stamps := STAMP
 	col = building_color(kind)
 	mask = stamps[kind]
-	if rem, rok := city.building_construction_remaining_at(c, x, y); rok && rem > 0 {
+	if city.building_construction_at(c, x, y) {
 		return CONSTRUCTION_STAMP, rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
 	}
 	col, _ = band_tint(c, x, y, col)
@@ -394,8 +394,8 @@ draw_inspect :: proc(c: ^city.City, x, y: int) {
 	hud_line(ix, &iy, fmt.ctprintf("Zone %v", lot.zone))
 	if kind, ok := city.building_kind_at(c, x, y); ok {
 		hud_line(ix, &iy, fmt.ctprintf("%v", kind))
-		rem, _ := city.building_construction_remaining_at(c, x, y)
-		if rem > 0 {
+		if city.building_construction_at(c, x, y) {
+			rem, _ := city.building_construction_remaining_at(c, x, y)
 			hud_line(ix, &iy, fmt.ctprintf("Construction %d", rem))
 		} else {
 			level, _ := city.building_level_at(c, x, y)

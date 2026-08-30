@@ -88,6 +88,13 @@ Graph_Point :: struct {
 }
 
 Lot :: struct {
+	kind:    Lot_Kind,
+	zone:    Zone,
+	terrain: Terrain,
+}
+
+@(private)
+lot_data :: struct {
 	kind:        Lot_Kind,
 	zone:        Zone,
 	terrain:     Terrain,
@@ -97,7 +104,7 @@ Lot :: struct {
 MAX_BUILDINGS :: MAP_SIZE * MAP_SIZE
 
 City :: struct {
-	lots:      [MAP_SIZE * MAP_SIZE]Lot,
+	lots:      [MAP_SIZE * MAP_SIZE]lot_data,
 	money:     int,
 	tax:       int,
 	ticks:     int,
@@ -148,12 +155,24 @@ fill_terrain :: proc(c: ^City, x0, y0, w, h: int, terrain: Terrain) {
 }
 
 city_lot :: proc(c: ^City, x, y: int) -> Lot {
-	return c.lots[y * MAP_SIZE + x]
+	s := c.lots[y * MAP_SIZE + x]
+	return Lot{kind = s.kind, zone = s.zone, terrain = s.terrain}
+}
+
+@(private)
+building_id_at :: proc(c: ^City, x, y: int) -> u16 {
+	return c.lots[y * MAP_SIZE + x].building_id
+}
+
+@(private)
+plot_unoccupied :: proc(c: ^City, x, y: int) -> bool {
+	s := c.lots[y * MAP_SIZE + x]
+	return s.kind == .Plot && s.building_id == 0
 }
 
 @(private)
 building_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
-	id := city_lot(c, x, y).building_id
+	id := building_id_at(c, x, y)
 	if id == 0 || id > MAX_BUILDINGS {
 		return {}, false
 	}
@@ -184,20 +203,25 @@ building_construction_remaining_at :: proc(c: ^City, x, y: int) -> (remaining: u
 	return b.remaining, found
 }
 
+building_construction_at :: proc(c: ^City, x, y: int) -> bool {
+	b, ok := building_at(c, x, y)
+	return ok && b.remaining > 0
+}
+
 building_northwest_at :: proc(c: ^City, x, y: int) -> (size: int, ok: bool) {
-	id := city_lot(c, x, y).building_id
+	id := building_id_at(c, x, y)
 	if id == 0 {
 		return 0, false
 	}
-	if x > 0 && city_lot(c, x - 1, y).building_id == id {
+	if x > 0 && building_id_at(c, x - 1, y) == id {
 		return 0, false
 	}
-	if y > 0 && city_lot(c, x, y - 1).building_id == id {
+	if y > 0 && building_id_at(c, x, y - 1) == id {
 		return 0, false
 	}
 	size = 1
 	if x + 1 < MAP_SIZE && y + 1 < MAP_SIZE {
-		if city_lot(c, x + 1, y).building_id == id && city_lot(c, x, y + 1).building_id == id {
+		if building_id_at(c, x + 1, y) == id && building_id_at(c, x, y + 1) == id {
 			size = 2
 		}
 	}
@@ -277,7 +301,7 @@ paint_road :: proc(c: ^City, x, y: int) -> bool {
 	if lot.building_id != 0 {
 		remove_building(c, lot.building_id)
 	}
-	lot^ = Lot {
+	lot^ = lot_data {
 		kind    = .Road,
 		terrain = lot.terrain,
 	}
@@ -299,8 +323,7 @@ stamp :: proc(c: ^City, x, y: int, kind: Building_Kind, size := 1) -> bool {
 			if !in_bounds(px, py) {
 				return false
 			}
-			lot := city_lot(c, px, py)
-			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+			if !plot_unoccupied(c, px, py) || c.lots[py * MAP_SIZE + px].terrain != .Grass {
 				return false
 			}
 			if has_road_access(c, px, py) {
@@ -376,7 +399,7 @@ bulldoze :: proc(c: ^City, x, y: int) -> bool {
 	}
 	lot := &c.lots[y * MAP_SIZE + x]
 	if lot.kind == .Road {
-		lot^ = Lot {
+		lot^ = lot_data {
 			terrain = lot.terrain,
 		}
 		recompute_derived(c)
@@ -1255,10 +1278,8 @@ eligible_2x2 :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
 
 @(private)
 plot_ready :: proc(c: ^City, x, y: int, zone: Zone) -> bool {
-	lot := city_lot(c, x, y)
-	return lot.kind == .Plot &&
-		lot.zone == zone &&
-		lot.building_id == 0 &&
+	return plot_unoccupied(c, x, y) &&
+		c.lots[y * MAP_SIZE + x].zone == zone &&
 		lot_powered(c, x, y) &&
 		lot_watered(c, x, y)
 }

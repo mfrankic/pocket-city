@@ -24,7 +24,6 @@ new_city_lots_are_empty_plots :: proc(t: ^testing.T) {
 	lot := city_lot(c, 0, 0)
 	testing.expect_value(t, lot.kind, Lot_Kind.Plot)
 	testing.expect_value(t, lot.zone, Zone.None)
-	testing.expect_value(t, lot.building_id, u16(0))
 	expect_no_building(t, c, 0, 0)
 	testing.expect_value(t, lot.terrain, Terrain.Grass)
 	corner := city_lot(c, 63, 63)
@@ -71,6 +70,21 @@ expect_building :: proc(t: ^testing.T, c: ^City, x, y: int, kind: Building_Kind)
 expect_no_building :: proc(t: ^testing.T, c: ^City, x, y: int) {
 	_, ok := building_kind_at(c, x, y)
 	testing.expect(t, !ok)
+}
+
+expect_footprint :: proc(t: ^testing.T, c: ^City, x, y, size: int, kind: Building_Kind) {
+	s, nw := building_northwest_at(c, x, y)
+	testing.expect(t, nw)
+	testing.expect_value(t, s, size)
+	for dy in 0 ..< size {
+		for dx in 0 ..< size {
+			expect_building(t, c, x + dx, y + dy, kind)
+			if dx != 0 || dy != 0 {
+				_, origin := building_northwest_at(c, x + dx, y + dy)
+				testing.expect(t, !origin)
+			}
+		}
+	}
 }
 
 @(test)
@@ -220,16 +234,17 @@ pick_first :: proc(n: int) -> int {
 }
 
 @(test)
-grown_house_has_a_building_identity :: proc(t: ^testing.T) {
+grown_house_occupies_one_plot :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
 	p, ok := supplied_plots(c, 2)
 	testing.expect(t, ok)
 	paint_zone(c, p[0][0], p[0][1], .Residential)
 	tick(c, pick_first)
-	testing.expect(t, city_lot(c, p[0][0], p[0][1]).building_id != 0)
 	expect_building(t, c, p[0][0], p[0][1], .House)
-	testing.expect_value(t, city_lot(c, p[1][0], p[1][1]).building_id, u16(0))
+	size, nw := building_northwest_at(c, p[0][0], p[0][1])
+	testing.expect(t, nw)
+	testing.expect_value(t, size, 1)
 	expect_no_building(t, c, p[1][0], p[1][1])
 }
 
@@ -351,7 +366,7 @@ tick_grows_at_most_one_factory :: proc(t: ^testing.T) {
 }
 
 @(test)
-two_houses_have_distinct_identities :: proc(t: ^testing.T) {
+two_houses_each_occupy_one_plot :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
 	p, ok := supplied_plots(c, 2)
@@ -360,11 +375,11 @@ two_houses_have_distinct_identities :: proc(t: ^testing.T) {
 	paint_zone(c, p[1][0], p[1][1], .Residential)
 	tick(c, pick_first)
 	tick(c, pick_first)
-	id_a := city_lot(c, p[0][0], p[0][1]).building_id
-	id_b := city_lot(c, p[1][0], p[1][1]).building_id
-	testing.expect(t, id_a != 0)
-	testing.expect(t, id_b != 0)
-	testing.expect(t, id_a != id_b)
+	size_a, nw_a := building_northwest_at(c, p[0][0], p[0][1])
+	size_b, nw_b := building_northwest_at(c, p[1][0], p[1][1])
+	testing.expect(t, nw_a && nw_b)
+	testing.expect_value(t, size_a, 1)
+	testing.expect_value(t, size_b, 1)
 	expect_building(t, c, p[0][0], p[0][1], .House)
 	expect_building(t, c, p[1][0], p[1][1], .House)
 	ra, aok := building_construction_remaining_at(c, p[0][0], p[0][1])
@@ -531,7 +546,7 @@ save_then_load_restores_lots_and_money :: proc(t: ^testing.T) {
 }
 
 @(test)
-save_then_load_round_trips_building_identity :: proc(t: ^testing.T) {
+save_then_load_keeps_two_house_footprints :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
 	p, ok := supplied_plots(c, 2)
@@ -546,11 +561,11 @@ save_then_load_round_trips_building_identity :: proc(t: ^testing.T) {
 	loaded, load_ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, load_ok)
-	id_a := city_lot(loaded, p[0][0], p[0][1]).building_id
-	id_b := city_lot(loaded, p[1][0], p[1][1]).building_id
-	testing.expect(t, id_a != 0)
-	testing.expect(t, id_b != 0)
-	testing.expect(t, id_a != id_b)
+	size_a, nw_a := building_northwest_at(loaded, p[0][0], p[0][1])
+	size_b, nw_b := building_northwest_at(loaded, p[1][0], p[1][1])
+	testing.expect(t, nw_a && nw_b)
+	testing.expect_value(t, size_a, 1)
+	testing.expect_value(t, size_b, 1)
 	expect_building(t, loaded, p[0][0], p[0][1], .House)
 	expect_building(t, loaded, p[1][0], p[1][1], .House)
 }
@@ -790,8 +805,7 @@ find_empty_cardinal_plot :: proc(c: ^City, x, y: int) -> (px, py: int, ok: bool)
 		if nx < 0 || ny < 0 || nx >= MAP_SIZE || ny >= MAP_SIZE {
 			continue
 		}
-		lot := city_lot(c, nx, ny)
-		if lot.kind == .Plot && lot.terrain == .Grass && lot.building_id == 0 {
+		if is_empty_grass(c, nx, ny) {
 			return nx, ny, true
 		}
 	}
@@ -843,8 +857,7 @@ supplied_plots :: proc(c: ^City, n: int) -> (out: [8][2]int, ok: bool) {
 		if ny >= MAP_SIZE {
 			break
 		}
-		lot := city_lot(c, rx, ny)
-		if lot.kind == .Plot && lot.terrain == .Grass && lot.building_id == 0 {
+		if is_empty_grass(c, rx, ny) {
 			paint_road(c, rx, ny)
 		}
 	}
@@ -854,8 +867,7 @@ supplied_plots :: proc(c: ^City, n: int) -> (out: [8][2]int, ok: bool) {
 			if count >= n {
 				return out, true
 			}
-			lot := city_lot(c, x, y)
-			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+			if !is_empty_grass(c, x, y) {
 				continue
 			}
 			if !lot_powered(c, x, y) || !lot_watered(c, x, y) {
@@ -891,20 +903,12 @@ all_seven_facilities_stamp_from_the_start :: proc(t: ^testing.T) {
 }
 
 @(test)
-station_may_occupy_a_2x2_and_shares_identity :: proc(t: ^testing.T) {
+station_occupies_a_2x2 :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
 	paint_road(c, 0, 0)
 	testing.expect(t, stamp(c, 1, 0, .Station, 2))
-	expect_building(t, c, 1, 0, .Station)
-	expect_building(t, c, 2, 0, .Station)
-	expect_building(t, c, 1, 1, .Station)
-	expect_building(t, c, 2, 1, .Station)
-	id := city_lot(c, 1, 0).building_id
-	testing.expect(t, id != 0)
-	testing.expect_value(t, city_lot(c, 2, 0).building_id, id)
-	testing.expect_value(t, city_lot(c, 1, 1).building_id, id)
-	testing.expect_value(t, city_lot(c, 2, 1).building_id, id)
+	expect_footprint(t, c, 1, 0, 2, .Station)
 }
 
 @(test)
@@ -948,12 +952,7 @@ save_then_load_keeps_facilities_and_footprints :: proc(t: ^testing.T) {
 	loaded, ok := city_load(path)
 	defer free(loaded)
 	testing.expect(t, ok)
-	expect_building(t, loaded, 1, 0, .Station)
-	expect_building(t, loaded, 2, 0, .Station)
-	expect_building(t, loaded, 1, 1, .Station)
-	expect_building(t, loaded, 2, 1, .Station)
-	id := city_lot(loaded, 1, 0).building_id
-	testing.expect_value(t, city_lot(loaded, 2, 1).building_id, id)
+	expect_footprint(t, loaded, 1, 0, 2, .Station)
 	expect_building(t, loaded, 0, 1, .Park)
 }
 
@@ -1237,7 +1236,6 @@ missing_power_abandons_a_house_into_a_husk :: proc(t: ^testing.T) {
 			testing.expect_value(t, city_population(c), 0)
 			lot := city_lot(c, p[0][0], p[0][1])
 			testing.expect_value(t, lot.zone, Zone.Residential)
-			testing.expect(t, lot.building_id != 0)
 			expect_building(t, c, p[0][0], p[0][1], .House)
 			testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
 			testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
@@ -1411,12 +1409,13 @@ new_growth_skips_husk_plots :: proc(t: ^testing.T) {
 			break
 		}
 	}
-	husk_id := city_lot(c, p[0][0], p[0][1]).building_id
-	testing.expect(t, husk_id != 0)
+	testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
+	testing.expect(t, !building_construction_at(c, p[0][0], p[0][1]))
 	expect_no_building(t, c, p[1][0], p[1][1])
 	testing.expect(t, stamp(c, sx, sy, .Station))
 	tick(c, pick_first)
-	testing.expect_value(t, city_lot(c, p[0][0], p[0][1]).building_id, husk_id)
+	testing.expect(t, building_abandoned_at(c, p[0][0], p[0][1]))
+	testing.expect(t, !building_construction_at(c, p[0][0], p[0][1]))
 	expect_building(t, c, p[0][0], p[0][1], .House)
 	expect_building(t, c, p[1][0], p[1][1], .House)
 }
@@ -1610,8 +1609,7 @@ supplied_plot_touching_lake :: proc(c: ^City) -> (x, y, lx, ly: int, ok: bool) {
 	cardinal := [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			lot := city_lot(c, x, y)
-			if lot.kind != .Plot || lot.terrain != .Grass || lot.building_id != 0 {
+			if !is_empty_grass(c, x, y) {
 				continue
 			}
 			if !lot_powered(c, x, y) || !lot_watered(c, x, y) || !plot_touches_road(c, x, y) {
@@ -1798,7 +1796,8 @@ is_empty_grass :: proc(c: ^City, x, y: int) -> bool {
 		return false
 	}
 	lot := city_lot(c, x, y)
-	return lot.kind == .Plot && lot.terrain == .Grass && lot.building_id == 0
+	_, occupied := building_kind_at(c, x, y)
+	return lot.kind == .Plot && lot.terrain == .Grass && !occupied
 }
 
 in_rect :: proc(x, y, x0, y0, w, h: int) -> bool {
@@ -1938,12 +1937,7 @@ high_land_value_births_a_2x2_house :: proc(t: ^testing.T) {
 		}
 	}
 	tick(c, pick_first)
-	id := city_lot(c, x, y).building_id
-	testing.expect(t, id != 0)
-	testing.expect_value(t, city_lot(c, x + 1, y).building_id, id)
-	testing.expect_value(t, city_lot(c, x, y + 1).building_id, id)
-	testing.expect_value(t, city_lot(c, x + 1, y + 1).building_id, id)
-	expect_building(t, c, x, y, .House)
+	expect_footprint(t, c, x, y, 2, .House)
 }
 
 @(test)
@@ -1958,17 +1952,19 @@ low_land_value_births_a_1x1_even_with_four_plots :: proc(t: ^testing.T) {
 		}
 	}
 	tick(c, pick_first)
-	id := city_lot(c, x, y).building_id
-	testing.expect(t, id != 0)
 	n := 0
 	for dy in 0 ..< 2 {
 		for dx in 0 ..< 2 {
-			if city_lot(c, x + dx, y + dy).building_id == id {
+			_, occupied := building_kind_at(c, x + dx, y + dy)
+			if occupied {
 				n += 1
 			}
 		}
 	}
 	testing.expect_value(t, n, 1)
+	size, nw := building_northwest_at(c, x, y)
+	testing.expect(t, nw)
+	testing.expect_value(t, size, 1)
 	expect_building(t, c, x, y, .House)
 }
 
@@ -2113,16 +2109,9 @@ level_up_does_not_grow_the_footprint :: proc(t: ^testing.T) {
 	lv, lok := building_level_at(c, hx, hy)
 	testing.expect(t, lok)
 	testing.expect_value(t, lv, u8(2))
-	id := city_lot(c, hx, hy).building_id
-	n := 0
-	for y in 0 ..< MAP_SIZE {
-		for x in 0 ..< MAP_SIZE {
-			if city_lot(c, x, y).building_id == id {
-				n += 1
-			}
-		}
-	}
-	testing.expect_value(t, n, 1)
+	size, nw := building_northwest_at(c, hx, hy)
+	testing.expect(t, nw)
+	testing.expect_value(t, size, 1)
 }
 
 @(test)
@@ -2172,8 +2161,6 @@ save_then_load_keeps_level_and_footprint :: proc(t: ^testing.T) {
 		}
 	}
 	await_finished(c, x, y)
-	id := city_lot(c, x, y).building_id
-	testing.expect(t, id != 0)
 	lv, lok := building_level_at(c, x, y)
 	testing.expect(t, lok)
 	path := "city_level.save"
@@ -2185,10 +2172,7 @@ save_then_load_keeps_level_and_footprint :: proc(t: ^testing.T) {
 	llv, llok := building_level_at(loaded, x, y)
 	testing.expect(t, llok)
 	testing.expect_value(t, llv, lv)
-	lid := city_lot(loaded, x, y).building_id
-	testing.expect_value(t, city_lot(loaded, x + 1, y).building_id, lid)
-	testing.expect_value(t, city_lot(loaded, x, y + 1).building_id, lid)
-	testing.expect_value(t, city_lot(loaded, x + 1, y + 1).building_id, lid)
+	expect_footprint(t, loaded, x, y, 2, .House)
 	testing.expect_value(t, city_population(loaded), city_population(c))
 }
 
@@ -2221,10 +2205,7 @@ high_land_value_births_a_2x2_shop :: proc(t: ^testing.T) {
 			if in_rect(px, py, x, y, 2, 2) {
 				continue
 			}
-			lot := city_lot(c, px, py)
-			if lot.kind == .Plot &&
-			   lot.terrain == .Grass &&
-			   lot.building_id == 0 &&
+			if is_empty_grass(c, px, py) &&
 			   lot_powered(c, px, py) &&
 			   lot_watered(c, px, py) &&
 			   plot_touches_road(c, px, py) {
@@ -2247,12 +2228,7 @@ high_land_value_births_a_2x2_shop :: proc(t: ^testing.T) {
 		}
 	}
 	await_finished(c, x, y)
-	id := city_lot(c, x, y).building_id
-	testing.expect(t, id != 0)
-	testing.expect_value(t, city_lot(c, x + 1, y).building_id, id)
-	testing.expect_value(t, city_lot(c, x, y + 1).building_id, id)
-	testing.expect_value(t, city_lot(c, x + 1, y + 1).building_id, id)
-	expect_building(t, c, x, y, .Shop)
+	expect_footprint(t, c, x, y, 2, .Shop)
 	testing.expect_value(t, city_jobs(c), 16)
 }
 
@@ -2959,7 +2935,7 @@ new_house_enters_construction_and_occupies_its_plot :: proc(t: ^testing.T) {
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
 	expect_building(t, c, hx, hy, .House)
-	testing.expect(t, city_lot(c, hx, hy).building_id != 0)
+	testing.expect(t, building_construction_at(c, hx, hy))
 	rem, rok := building_construction_remaining_at(c, hx, hy)
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
@@ -3302,18 +3278,15 @@ load_old_version_leaves_city_alone :: proc(t: ^testing.T) {
 maintenance_cost :: proc(c: ^City) -> int {
 	roads := 0
 	facilities := 0
-	seen: [MAX_BUILDINGS]bool
 	for y in 0 ..< MAP_SIZE {
 		for x in 0 ..< MAP_SIZE {
-			lot := city_lot(c, x, y)
-			if lot.kind == .Road {
+			if city_lot(c, x, y).kind == .Road {
 				roads += 1
 			}
-			id := lot.building_id
-			if id == 0 || seen[id - 1] {
+			_, nw := building_northwest_at(c, x, y)
+			if !nw {
 				continue
 			}
-			seen[id - 1] = true
 			kind, ok := building_kind_at(c, x, y)
 			if !ok {
 				continue
@@ -3524,9 +3497,46 @@ construction_is_not_abandoned :: proc(t: ^testing.T) {
 	rem, rok := building_construction_remaining_at(c, p[0][0], p[0][1])
 	testing.expect(t, rok)
 	testing.expect(t, rem > 0)
+	testing.expect(t, building_construction_at(c, p[0][0], p[0][1]))
 	size, nw := building_northwest_at(c, p[0][0], p[0][1])
 	testing.expect(t, nw)
 	testing.expect_value(t, size, 1)
 	testing.expect(t, !building_abandoned_at(c, p[0][0], p[0][1]))
 	testing.expect(t, !building_struggling_at(c, p[0][0], p[0][1]))
+}
+
+@(test)
+empty_lot_is_not_construction :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	testing.expect(t, !building_construction_at(c, 0, 0))
+}
+
+@(test)
+park_is_not_construction :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	paint_road(c, 0, 0)
+	testing.expect(t, stamp(c, 1, 0, .Park))
+	testing.expect(t, !building_construction_at(c, 1, 0))
+	rem, rok := building_construction_remaining_at(c, 1, 0)
+	testing.expect(t, rok)
+	testing.expect_value(t, rem, u8(0))
+}
+
+@(test)
+construction_ends_when_the_house_finishes :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 1)
+	testing.expect(t, ok)
+	hx, hy := p[0][0], p[0][1]
+	paint_zone(c, hx, hy, .Residential)
+	tick(c, pick_first)
+	testing.expect(t, building_construction_at(c, hx, hy))
+	await_finished(c, hx, hy)
+	testing.expect(t, !building_construction_at(c, hx, hy))
+	rem, rok := building_construction_remaining_at(c, hx, hy)
+	testing.expect(t, rok)
+	testing.expect_value(t, rem, u8(0))
 }

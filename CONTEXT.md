@@ -77,7 +77,7 @@ A per-plot number from local density, city unemployment, and Police coverage. It
 _Avoid_: Safety, law, unrest
 
 **Fire**:
-A per-plot intensity from 0 to 1. It may spread to cardinal plots (not road, lake, or rock). Firehouse coverage decays it and blocks ignition. A finished building on a burning plot takes a health nibble.
+A per-plot intensity from 0 to 1. It may spread to cardinal plots (not road, lake, or rock). It decays each Month; Firehouse coverage decays it faster and blocks ignition. A finished building on a burning plot takes a health nibble.
 _Avoid_: Blaze, wildfire, agent
 
 **Construction**:
@@ -169,7 +169,7 @@ A span of ticks. Fire spread and decay, outage rolls, ignition rolls, graphs, an
 _Avoid_: Day/night cycle, hour as a mechanic
 
 **Outage**:
-A month when Stations supply no Power.
+A month when Stations supply no Power. Grown buildings do not lose Health from the missing Power and Water that month. A missing Station still does.
 _Avoid_: Blackout, event, disaster (fire is the other one)
 
 **Money**:

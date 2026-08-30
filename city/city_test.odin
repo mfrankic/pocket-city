@@ -1373,6 +1373,60 @@ unemployment_nibbles_houses_not_shops :: proc(t: ^testing.T) {
 }
 
 @(test)
+unemployment_does_not_nibble_houses_while_a_shop_is_in_construction :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 2)
+	testing.expect(t, ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	paint_zone(c, p[1][0], p[1][1], .Commercial)
+	await_finished(c, p[0][0], p[0][1])
+	tick(c, pick_first)
+	shop := city_lot(c, p[1][0], p[1][1]).occupant
+	testing.expect(t, shop.present)
+	testing.expect_value(t, shop.status, Occupant_Status.Construction)
+	for _ in 0 ..< 5 {
+		tick(c, pick_first)
+		testing.expect_value(t, city_lot(c, p[1][0], p[1][1]).occupant.status, Occupant_Status.Construction)
+	}
+	testing.expect_value(t, city_lot(c, p[0][0], p[0][1]).occupant.health, f32(1))
+}
+
+@(test)
+unemployment_does_not_nibble_houses_while_a_shop_is_abandoned :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 3)
+	testing.expect(t, ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	paint_zone(c, p[1][0], p[1][1], .Residential)
+	paint_zone(c, p[2][0], p[2][1], .Commercial)
+	await_finished(c, p[0][0], p[0][1])
+	tick(c, pick_first)
+	await_finished(c, p[2][0], p[2][1])
+	await_finished(c, p[1][0], p[1][1])
+	testing.expect_value(t, city_population(c), 8)
+	testing.expect_value(t, city_jobs(c), 4)
+	sx, sy, found := find_building(c, .Station)
+	testing.expect(t, found)
+	testing.expect(t, bulldoze(c, sx, sy))
+	for _ in 0 ..< 80 {
+		tick(c, pick_first)
+		if city_lot(c, p[2][0], p[2][1]).occupant.band == .Abandoned {
+			break
+		}
+	}
+	testing.expect_value(t, city_lot(c, p[2][0], p[2][1]).occupant.band, Health_Band.Abandoned)
+	testing.expect(t, stamp(c, sx, sy, .Station))
+	before := city_lot(c, p[0][0], p[0][1]).occupant.health
+	for _ in 0 ..< 5 {
+		tick(c, pick_first)
+		testing.expect_value(t, city_lot(c, p[2][0], p[2][1]).occupant.band, Health_Band.Abandoned)
+	}
+	testing.expect(t, city_lot(c, p[0][0], p[0][1]).occupant.health > before)
+}
+
+@(test)
 high_tax_nibbles_health :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
@@ -2798,6 +2852,34 @@ outage_dries_taps_when_towers_lose_power :: proc(t: ^testing.T) {
 }
 
 @(test)
+outage_month_does_not_abandon_a_house :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 2)
+	testing.expect(t, ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	paint_zone(c, p[1][0], p[1][1], .Commercial)
+	await_finished(c, p[0][0], p[0][1])
+	tick(c, pick_first)
+	await_finished(c, p[1][0], p[1][1])
+	await_full_health(c, p[0][0], p[0][1])
+	for city_day(c) != 1 {
+		tick(c, pick_first)
+	}
+	tick(c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect(t, !city_lot(c, p[0][0], p[0][1]).powered)
+	for _ in 1 ..< MONTH_TICKS {
+		tick(c, pick_first)
+		testing.expect(t, city_outage(c))
+	}
+	occ := city_lot(c, p[0][0], p[0][1]).occupant
+	testing.expect(t, occ.present)
+	testing.expect(t, occ.band != .Abandoned)
+	testing.expect_value(t, city_population(c), 4)
+}
+
+@(test)
 stations_supply_again_after_outage_month_without_restamp :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
@@ -2911,7 +2993,29 @@ fire_lingers_through_a_month_without_firehouse :: proc(t: ^testing.T) {
 	got := city_lot(c, hx, hy).fire
 	testing.expect(t, got > 0)
 	advance_month(c, pick_first)
-	testing.expect_value(t, city_lot(c, hx, hy).fire, got)
+	testing.expect(t, city_lot(c, hx, hy).fire > 0)
+}
+
+@(test)
+fire_decays_slowly_without_a_firehouse :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 2)
+	testing.expect(t, ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	paint_zone(c, p[1][0], p[1][1], .Commercial)
+	await_finished(c, p[0][0], p[0][1])
+	tick(c, pick_first)
+	await_finished(c, p[1][0], p[1][1])
+	await_full_health(c, p[0][0], p[0][1])
+	hx, hy := p[0][0], p[0][1]
+	advance_month(c, pick_ignite)
+	got := city_lot(c, hx, hy).fire
+	testing.expect(t, got > 0)
+	advance_month(c, pick_first)
+	after := city_lot(c, hx, hy).fire
+	testing.expect(t, after < got)
+	testing.expect(t, after > 0)
 }
 
 pick_spread :: proc(n: int) -> int {
@@ -3571,6 +3675,23 @@ starting_money_and_rates_let_a_first_neighborhood_be_painted :: proc(t: ^testing
 	}
 	testing.expect(t, city_money(c) > 0)
 	testing.expect(t, paint_zone(c, p[1][0], p[1][1], .Commercial))
+}
+
+@(test)
+tiny_opener_keeps_population_and_money_for_two_years :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	p, ok := supplied_plots(c, 4)
+	testing.expect(t, ok)
+	testing.expect(t, paint_zone(c, p[0][0], p[0][1], .Residential))
+	testing.expect(t, paint_zone(c, p[1][0], p[1][1], .Residential))
+	testing.expect(t, paint_zone(c, p[2][0], p[2][1], .Commercial))
+	testing.expect(t, paint_zone(c, p[3][0], p[3][1], .Commercial))
+	for _ in 0 ..< 24 * MONTH_TICKS {
+		tick(c, pick_first)
+	}
+	testing.expect(t, city_population(c) > 0)
+	testing.expect(t, city_money(c) > 0)
 }
 
 @(test)

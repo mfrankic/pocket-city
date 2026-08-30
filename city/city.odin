@@ -39,6 +39,7 @@ OUTAGE_CHANCE :: 8
 FIRE_IGNITE_CHANCE :: 11
 FIRE_SPREAD_CHANCE :: 13
 FIRE_DECAY :: f32(0.25)
+FIRE_DECAY_UNCOVERED :: f32(0.125)
 
 Lot_Kind :: enum {
 	Plot,
@@ -1098,9 +1099,11 @@ decay_fire :: proc(c: ^City) {
 			continue
 		}
 		x, y := i % MAP_SIZE, i / MAP_SIZE
+		step := FIRE_DECAY_UNCOVERED
 		if coverage_at(c, x, y, .Firehouse) {
-			c.fire[i] = max(c.fire[i] - FIRE_DECAY, 0)
+			step = FIRE_DECAY
 		}
+		c.fire[i] = max(c.fire[i] - step, 0)
 	}
 }
 
@@ -1170,8 +1173,14 @@ sample_graph :: proc(c: ^City) {
 
 @(private)
 apply_health :: proc(c: ^City) {
-	// ponytail: producing pop, so demand can return; husks may pulse until shops exist
 	unemployed := city_population(c) > city_jobs(c)
+	shop_waiting := false
+	for b in c.buildings {
+		if b.present && b.kind == .Shop && !producing(b) {
+			shop_waiting = true
+			break
+		}
+	}
 	for id in 1 ..= MAX_BUILDINGS {
 		b := &c.buildings[id - 1]
 		if !b.present || b.remaining > 0 {
@@ -1179,17 +1188,19 @@ apply_health :: proc(c: ^City) {
 		}
 		delta: f32
 		if is_grown(b.kind) {
-			if !lots_supplied(c, u16(id), &c.powered) {
-				delta -= HEALTH_NIBBLE
-			}
-			if !lots_supplied(c, u16(id), &c.watered) {
-				delta -= HEALTH_NIBBLE
+			if !c.outage {
+				if !lots_supplied(c, u16(id), &c.powered) {
+					delta -= HEALTH_NIBBLE
+				}
+				if !lots_supplied(c, u16(id), &c.watered) {
+					delta -= HEALTH_NIBBLE
+				}
 			}
 			if building_traffic(c, u16(id)) >= TRAFFIC_HIGH {
 				delta -= HEALTH_NIBBLE
 			}
 		}
-		if unemployed && b.kind == .House {
+		if unemployed && b.kind == .House && !shop_waiting {
 			delta -= HEALTH_NIBBLE
 		}
 		if b.kind == .House && building_pollution(c, u16(id)) > POLLUTION_HIGH {

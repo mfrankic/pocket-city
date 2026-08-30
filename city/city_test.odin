@@ -31,6 +31,47 @@ new_city_lots_are_empty_plots :: proc(t: ^testing.T) {
 }
 
 @(test)
+city_lot_answers_occupant_for_inspect_and_stamps :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	empty := city_lot(c, 0, 0)
+	testing.expect(t, !empty.occupant.present)
+
+	paint_road(c, 0, 0)
+	testing.expect(t, stamp(c, 1, 0, .Station, 2))
+	origin := city_lot(c, 1, 0)
+	testing.expect(t, origin.occupant.present)
+	testing.expect_value(t, origin.occupant.kind, Building_Kind.Station)
+	testing.expect_value(t, origin.occupant.status, Occupant_Status.Finished)
+	testing.expect_value(t, origin.occupant.band, Health_Band.None)
+	testing.expect(t, origin.occupant.northwest)
+	testing.expect_value(t, origin.occupant.size, 2)
+	other := city_lot(c, 2, 0)
+	testing.expect(t, other.occupant.present)
+	testing.expect_value(t, other.occupant.status, Occupant_Status.Finished)
+	testing.expect(t, !other.occupant.northwest)
+	testing.expect_value(t, other.occupant.size, 2)
+
+	p, plots_ok := supplied_plots(c, 1)
+	testing.expect(t, plots_ok)
+	paint_zone(c, p[0][0], p[0][1], .Residential)
+	tick(c, pick_first)
+	house := city_lot(c, p[0][0], p[0][1])
+	testing.expect(t, house.occupant.present)
+	testing.expect_value(t, house.occupant.kind, Building_Kind.House)
+	testing.expect_value(t, house.occupant.status, Occupant_Status.Construction)
+	testing.expect_value(t, house.occupant.band, Health_Band.None)
+	testing.expect(t, house.occupant.remaining > 0)
+	testing.expect(t, house.occupant.northwest)
+	testing.expect_value(t, house.occupant.size, 1)
+	await_finished(c, p[0][0], p[0][1])
+	house = city_lot(c, p[0][0], p[0][1])
+	testing.expect_value(t, house.occupant.status, Occupant_Status.Finished)
+	testing.expect_value(t, house.occupant.band, Health_Band.None)
+	testing.expect_value(t, house.occupant.level, u8(1))
+}
+
+@(test)
 far_corner_accepts_a_road :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)

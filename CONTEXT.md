@@ -80,6 +80,10 @@ _Avoid_: Blaze, wildfire, agent
 A grown building that occupies its plots but is not finished. It lasts one Month of ticks from birth, then becomes level 1 with health. It produces no population or jobs. Facilities are never in Construction.
 _Avoid_: scaffolding, building site, Active
 
+**Finished**:
+A building that is not in Construction. It has health. A grown finished building produces population or jobs unless it is Abandoned. Facilities are finished when stamped.
+_Avoid_: complete, built, active, occupied
+
 **Health**:
 A per-building number from 0 to 1. Struggling and Abandoned are bands on it. Construction has no health yet.
 _Avoid_: Condition, durability, HP, wellness

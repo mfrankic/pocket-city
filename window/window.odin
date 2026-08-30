@@ -207,25 +207,26 @@ draw_stamp :: proc(ox, oy, scale: i32, mask: [16]u16, col: rl.Color) {
 }
 
 @(private)
-band_tint :: proc(c: ^city.City, x, y: int, col: rl.Color) -> (out: rl.Color, label: cstring) {
-	if city.building_abandoned_at(c, x, y) {
+band_tint :: proc(occupant: city.Occupant, col: rl.Color) -> (out: rl.Color, label: cstring) {
+	switch occupant.band {
+	case .Abandoned:
 		return rl.Color{90, 85, 80, 255}, "Abandoned"
-	}
-	if city.building_struggling_at(c, x, y) {
+	case .Struggling:
 		return rl.Color{col.r / 2, col.g / 2, col.b / 2, 255}, "Struggling"
+	case .None:
 	}
 	return col, ""
 }
 
 @(private)
-stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask: [16]u16, col: rl.Color) {
+stamp_color :: proc(occupant: city.Occupant) -> (mask: [16]u16, col: rl.Color) {
 	stamps := STAMP
-	col = building_color(kind)
-	mask = stamps[kind]
-	if city.building_construction_at(c, x, y) {
+	col = building_color(occupant.kind)
+	mask = stamps[occupant.kind]
+	if occupant.status == .Construction {
 		return CONSTRUCTION_STAMP, rl.Color{col.r / 3 + 90, col.g / 3 + 70, col.b / 3 + 30, 255}
 	}
-	col, _ = band_tint(c, x, y, col)
+	col, _ = band_tint(occupant, col)
 	return mask, col
 }
 
@@ -233,16 +234,12 @@ stamp_color :: proc(c: ^city.City, x, y: int, kind: city.Building_Kind) -> (mask
 draw_stamps :: proc(c: ^city.City) {
 	for y in 0 ..< city.MAP_SIZE {
 		for x in 0 ..< city.MAP_SIZE {
-			size, nw := city.building_northwest_at(c, x, y)
-			if !nw {
+			lot := city.city_lot(c, x, y)
+			if !lot.occupant.present || !lot.occupant.northwest {
 				continue
 			}
-			kind, kok := city.building_kind_at(c, x, y)
-			if !kok {
-				continue
-			}
-			mask, col := stamp_color(c, x, y, kind)
-			draw_stamp(i32(x * LOT_PX), i32(y * LOT_PX), i32(size), mask, col)
+			mask, col := stamp_color(lot.occupant)
+			draw_stamp(i32(x * LOT_PX), i32(y * LOT_PX), i32(lot.occupant.size), mask, col)
 		}
 	}
 }
@@ -280,38 +277,38 @@ overlay_color :: proc(c: ^city.City, x, y: int, overlay: Overlay) -> rl.Color {
 	lot := city.city_lot(c, x, y)
 	switch overlay {
 	case .Pollution:
-		p := clamp(city.lot_pollution(c, x, y), 0, 1)
+		p := clamp(lot.pollution, 0, 1)
 		return rl.Color{u8(40 + 170 * p), u8(35 + 50 * p), u8(20), 255}
 	case .Traffic:
 		if lot.kind == .Road {
-			p := clamp(city.lot_traffic(c, x, y), 0, 1)
+			p := clamp(lot.traffic, 0, 1)
 			return rl.Color{u8(40 + 180 * p), u8(40 + 40 * p), u8(40), 255}
 		}
 	case .Crime:
-		p := clamp(city.lot_crime(c, x, y) / 4, 0, 1)
+		p := clamp(lot.crime / 4, 0, 1)
 		return rl.Color{u8(40 + 160 * p), u8(20 + 20 * p), u8(50 + 80 * p), 255}
 	case .Fire:
-		p := clamp(city.lot_fire(c, x, y), 0, 1)
+		p := clamp(lot.fire, 0, 1)
 		return rl.Color{u8(40 + 200 * p), u8(20), u8(10), 255}
 	case .Land_Value:
-		v := clamp(city.lot_land_value(c, x, y) / 3, 0, 1)
+		v := clamp(lot.land_value / 3, 0, 1)
 		return rl.Color{u8(30 + 40 * v), u8(50 + 140 * v), u8(40 + 50 * v), 255}
 	case .Education:
 		if lot.kind != .Road {
-			return rl.Color{220, 200, 80, 255} if city.lot_education(c, x, y) else rl.Color{20, 20, 20, 255}
+			return rl.Color{220, 200, 80, 255} if lot.education else rl.Color{20, 20, 20, 255}
 		}
 	case .Power:
 		if lot.kind != .Road {
-			return rl.GOLD if city.lot_powered(c, x, y) else rl.Color{20, 20, 20, 255}
+			return rl.GOLD if lot.powered else rl.Color{20, 20, 20, 255}
 		}
 	case .Water:
 		if lot.kind != .Road {
-			return rl.SKYBLUE if city.lot_watered(c, x, y) else rl.Color{20, 20, 20, 255}
+			return rl.SKYBLUE if lot.watered else rl.Color{20, 20, 20, 255}
 		}
 	case .None:
 	}
-	if kind, ok := city.building_kind_at(c, x, y); ok {
-		_, col := stamp_color(c, x, y, kind)
+	if lot.occupant.present {
+		_, col := stamp_color(lot.occupant)
 		return col
 	}
 	return lot_base_color(c, x, y)
@@ -392,30 +389,28 @@ draw_inspect :: proc(c: ^city.City, x, y: int) {
 	hud_line(ix, &iy, fmt.ctprintf("Terrain %v", lot.terrain))
 	hud_line(ix, &iy, fmt.ctprintf("%v", lot.kind))
 	hud_line(ix, &iy, fmt.ctprintf("Zone %v", lot.zone))
-	if kind, ok := city.building_kind_at(c, x, y); ok {
-		hud_line(ix, &iy, fmt.ctprintf("%v", kind))
-		if city.building_construction_at(c, x, y) {
-			rem, _ := city.building_construction_remaining_at(c, x, y)
-			hud_line(ix, &iy, fmt.ctprintf("Construction %d", rem))
+	if lot.occupant.present {
+		hud_line(ix, &iy, fmt.ctprintf("%v", lot.occupant.kind))
+		if lot.occupant.status == .Construction {
+			hud_line(ix, &iy, fmt.ctprintf("Construction %d", lot.occupant.remaining))
 		} else {
-			level, _ := city.building_level_at(c, x, y)
-			if level >= 1 {
-				hud_line(ix, &iy, fmt.ctprintf("Level %d", level))
+			if lot.occupant.level >= 1 {
+				hud_line(ix, &iy, fmt.ctprintf("Level %d", lot.occupant.level))
 			}
-			_, label := band_tint(c, x, y, rl.WHITE)
+			_, label := band_tint(lot.occupant, rl.WHITE)
 			if label != "" {
 				hud_line(ix, &iy, label)
 			}
 		}
 	}
-	hud_line(ix, &iy, fmt.ctprintf("Power %s", "Yes" if city.lot_powered(c, x, y) else "No"))
-	hud_line(ix, &iy, fmt.ctprintf("Water %s", "Yes" if city.lot_watered(c, x, y) else "No"))
-	hud_line(ix, &iy, fmt.ctprintf("Pollution %.2f", city.lot_pollution(c, x, y)))
-	hud_line(ix, &iy, fmt.ctprintf("Land value %.2f", city.lot_land_value(c, x, y)))
-	hud_line(ix, &iy, fmt.ctprintf("Traffic %.2f", city.lot_traffic(c, x, y)))
-	hud_line(ix, &iy, fmt.ctprintf("Crime %.2f", city.lot_crime(c, x, y)))
-	hud_line(ix, &iy, fmt.ctprintf("Fire %.2f", city.lot_fire(c, x, y)))
-	hud_line(ix, &iy, fmt.ctprintf("Education %s", "Yes" if city.lot_education(c, x, y) else "No"))
+	hud_line(ix, &iy, fmt.ctprintf("Power %s", "Yes" if lot.powered else "No"))
+	hud_line(ix, &iy, fmt.ctprintf("Water %s", "Yes" if lot.watered else "No"))
+	hud_line(ix, &iy, fmt.ctprintf("Pollution %.2f", lot.pollution))
+	hud_line(ix, &iy, fmt.ctprintf("Land value %.2f", lot.land_value))
+	hud_line(ix, &iy, fmt.ctprintf("Traffic %.2f", lot.traffic))
+	hud_line(ix, &iy, fmt.ctprintf("Crime %.2f", lot.crime))
+	hud_line(ix, &iy, fmt.ctprintf("Fire %.2f", lot.fire))
+	hud_line(ix, &iy, fmt.ctprintf("Education %s", "Yes" if lot.education else "No"))
 }
 
 @(private)

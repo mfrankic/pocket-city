@@ -87,10 +87,41 @@ Graph_Point :: struct {
 	happiness:  f32,
 }
 
+Occupant_Status :: enum {
+	Construction,
+	Finished,
+}
+
+Health_Band :: enum {
+	None,
+	Struggling,
+	Abandoned,
+}
+
+Occupant :: struct {
+	present:   bool,
+	kind:      Building_Kind,
+	status:    Occupant_Status,
+	band:      Health_Band,
+	remaining: u8,
+	level:     u8,
+	northwest: bool,
+	size:      int,
+}
+
 Lot :: struct {
-	kind:    Lot_Kind,
-	zone:    Zone,
-	terrain: Terrain,
+	kind:       Lot_Kind,
+	zone:       Zone,
+	terrain:    Terrain,
+	occupant:   Occupant,
+	powered:    bool,
+	watered:    bool,
+	education:  bool,
+	pollution:  f32,
+	land_value: f32,
+	traffic:    f32,
+	crime:      f32,
+	fire:       f32,
 }
 
 @(private)
@@ -156,7 +187,40 @@ fill_terrain :: proc(c: ^City, x0, y0, w, h: int, terrain: Terrain) {
 
 city_lot :: proc(c: ^City, x, y: int) -> Lot {
 	s := c.lots[y * MAP_SIZE + x]
-	return Lot{kind = s.kind, zone = s.zone, terrain = s.terrain}
+	lot := Lot {
+		kind       = s.kind,
+		zone       = s.zone,
+		terrain    = s.terrain,
+		powered    = lot_powered(c, x, y),
+		watered    = lot_watered(c, x, y),
+		education  = lot_education(c, x, y),
+		pollution  = lot_pollution(c, x, y),
+		land_value = lot_land_value(c, x, y),
+		traffic    = lot_traffic(c, x, y),
+		crime      = lot_crime(c, x, y),
+		fire       = lot_fire(c, x, y),
+	}
+	b, found := building_at(c, x, y)
+	if !found {
+		return lot
+	}
+	lot.occupant.present = true
+	lot.occupant.kind = b.kind
+	lot.occupant.remaining = b.remaining
+	lot.occupant.level = b.level
+	if b.remaining > 0 {
+		lot.occupant.status = .Construction
+	} else {
+		lot.occupant.status = .Finished
+		switch {
+		case building_abandoned_at(c, x, y):
+			lot.occupant.band = .Abandoned
+		case building_struggling_at(c, x, y):
+			lot.occupant.band = .Struggling
+		}
+	}
+	lot.occupant.size, lot.occupant.northwest = footprint_at(c, x, y)
+	return lot
 }
 
 @(private)
@@ -183,31 +247,37 @@ building_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
 	return b, true
 }
 
+@(private)
 building_kind_at :: proc(c: ^City, x, y: int) -> (kind: Building_Kind, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.kind, found
 }
 
+@(private)
 building_health_at :: proc(c: ^City, x, y: int) -> (health: f32, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.health, found
 }
 
+@(private)
 building_level_at :: proc(c: ^City, x, y: int) -> (level: u8, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.level, found
 }
 
+@(private)
 building_construction_remaining_at :: proc(c: ^City, x, y: int) -> (remaining: u8, ok: bool) {
 	b, found := building_at(c, x, y)
 	return b.remaining, found
 }
 
+@(private)
 building_construction_at :: proc(c: ^City, x, y: int) -> bool {
 	b, ok := building_at(c, x, y)
 	return ok && b.remaining > 0
 }
 
+@(private)
 building_northwest_at :: proc(c: ^City, x, y: int) -> (size: int, ok: bool) {
 	id := building_id_at(c, x, y)
 	if id == 0 {
@@ -229,6 +299,23 @@ building_northwest_at :: proc(c: ^City, x, y: int) -> (size: int, ok: bool) {
 }
 
 @(private)
+footprint_at :: proc(c: ^City, x, y: int) -> (size: int, northwest: bool) {
+	id := building_id_at(c, x, y)
+	if id == 0 {
+		return 0, false
+	}
+	ox, oy := x, y
+	for ox > 0 && building_id_at(c, ox - 1, oy) == id {
+		ox -= 1
+	}
+	for oy > 0 && building_id_at(c, ox, oy - 1) == id {
+		oy -= 1
+	}
+	size, _ = building_northwest_at(c, ox, oy)
+	return size, ox == x && oy == y
+}
+
+@(private)
 finished_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
 	b, ok = building_at(c, x, y)
 	if !ok || b.remaining != 0 {
@@ -237,11 +324,13 @@ finished_at :: proc(c: ^City, x, y: int) -> (b: Building, ok: bool) {
 	return b, true
 }
 
+@(private)
 building_abandoned_at :: proc(c: ^City, x, y: int) -> bool {
 	b, ok := finished_at(c, x, y)
 	return ok && b.health <= HEALTH_ABANDONED
 }
 
+@(private)
 building_struggling_at :: proc(c: ^City, x, y: int) -> bool {
 	b, ok := finished_at(c, x, y)
 	return ok && b.health > HEALTH_ABANDONED && b.health < HEALTH_STRUGGLING
@@ -467,26 +556,32 @@ city_set_money :: proc(c: ^City, money: int) {
 	c.money = max(money, 0)
 }
 
+@(private)
 lot_powered :: proc(c: ^City, x, y: int) -> bool {
 	return c.powered[y * MAP_SIZE + x]
 }
 
+@(private)
 lot_watered :: proc(c: ^City, x, y: int) -> bool {
 	return c.watered[y * MAP_SIZE + x]
 }
 
+@(private)
 lot_pollution :: proc(c: ^City, x, y: int) -> f32 {
 	return c.pollution[y * MAP_SIZE + x]
 }
 
+@(private)
 lot_traffic :: proc(c: ^City, x, y: int) -> f32 {
 	return c.traffic[y * MAP_SIZE + x]
 }
 
+@(private)
 lot_crime :: proc(c: ^City, x, y: int) -> f32 {
 	return c.crime[y * MAP_SIZE + x]
 }
 
+@(private)
 lot_fire :: proc(c: ^City, x, y: int) -> f32 {
 	return c.fire[y * MAP_SIZE + x]
 }
@@ -537,10 +632,12 @@ coverage_needs_power :: proc(kind: Building_Kind) -> bool {
 	return false
 }
 
+@(private)
 lot_education :: proc(c: ^City, x, y: int) -> bool {
 	return coverage_at(c, x, y, .School)
 }
 
+@(private)
 lot_land_value :: proc(c: ^City, x, y: int) -> f32 {
 	return c.land_value[y * MAP_SIZE + x]
 }

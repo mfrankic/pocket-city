@@ -462,6 +462,11 @@ city_set_tax :: proc(c: ^City, tax: int) {
 	c.tax = max(tax, 0)
 }
 
+@(private)
+city_set_money :: proc(c: ^City, money: int) {
+	c.money = max(money, 0)
+}
+
 lot_powered :: proc(c: ^City, x, y: int) -> bool {
 	return c.powered[y * MAP_SIZE + x]
 }

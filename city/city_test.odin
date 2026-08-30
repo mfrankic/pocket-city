@@ -438,6 +438,16 @@ tick_collects_tax_on_population :: proc(t: ^testing.T) {
 }
 
 @(test)
+city_set_money_sets_the_treasury :: proc(t: ^testing.T) {
+	c := city_new()
+	defer free(c)
+	city_set_money(c, 9)
+	testing.expect_value(t, city_money(c), 9)
+	city_set_money(c, -1)
+	testing.expect_value(t, city_money(c), 0)
+}
+
+@(test)
 player_sets_tax_and_tick_income_uses_it :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
@@ -458,10 +468,10 @@ player_sets_tax_and_tick_income_uses_it :: proc(t: ^testing.T) {
 broke_city_cannot_spend :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
-	c.money = 9
+	city_set_money(c, 9)
 	testing.expect(t, !paint_road(c, 0, 0))
 	testing.expect_value(t, city_lot(c, 0, 0).kind, Lot_Kind.Plot)
-	c.money = 4
+	city_set_money(c, 4)
 	testing.expect(t, !paint_zone(c, 1, 0, .Commercial))
 	testing.expect_value(t, city_lot(c, 1, 0).zone, Zone.None)
 }
@@ -472,7 +482,7 @@ broke_city_cannot_bulldoze_forest :: proc(t: ^testing.T) {
 	defer free(c)
 	x, y, found := find_terrain(c, .Forest)
 	testing.expect(t, found)
-	c.money = 19
+	city_set_money(c, 19)
 	testing.expect(t, !bulldoze(c, x, y))
 	testing.expect_value(t, city_lot(c, x, y).terrain, Terrain.Forest)
 	testing.expect_value(t, city_money(c), 19)
@@ -961,7 +971,7 @@ broke_city_cannot_stamp :: proc(t: ^testing.T) {
 	c := city_new()
 	defer free(c)
 	paint_road(c, 0, 0)
-	c.money = 99
+	city_set_money(c, 99)
 	testing.expect(t, !stamp(c, 1, 0, .Park))
 	expect_no_building(t, c, 1, 0)
 	testing.expect_value(t, city_money(c), 99)
@@ -1877,7 +1887,7 @@ supplied_2x2 :: proc(c: ^City) -> (x, y: int, ok: bool) {
 	if !found {
 		return 0, 0, false
 	}
-	c.money = 99999
+	city_set_money(c, 99999)
 	for y in 0 ..< MAP_SIZE - 1 {
 		for x in 0 ..< MAP_SIZE - 1 {
 			if !is_empty_grass(c, x, y) ||
@@ -1998,8 +2008,12 @@ new_house_is_level_1 :: proc(t: ^testing.T) {
 	testing.expect_value(t, lv, u8(1))
 }
 
+ensure_stamp_money :: proc(c: ^City) {
+	city_set_money(c, max(city_money(c), STAMP_COST))
+}
+
 stamp_near :: proc(c: ^City, x, y: int, kind: Building_Kind) -> bool {
-	c.money = max(c.money, STAMP_COST)
+	ensure_stamp_money(c)
 	for py in y - COVERAGE_RANGE ..= y + COVERAGE_RANGE {
 		for px in x - COVERAGE_RANGE ..= x + COVERAGE_RANGE {
 			if px == x && py == y {
@@ -2405,7 +2419,6 @@ unemployment_raises_crime :: proc(t: ^testing.T) {
 	testing.expect(t, found)
 	paint_zone(c, far[0], far[1], .Residential)
 	await_finished(c, far[0], far[1])
-	reset_health(c)
 	tick(c, pick_first)
 	testing.expect(t, lot_crime(c, shop[0], shop[1]) > before)
 }
@@ -2448,7 +2461,7 @@ unpowered_police_does_not_lower_crime :: proc(t: ^testing.T) {
 	testing.expect(t, bulldoze(c, stx, sty))
 	before := lot_crime(c, sx, sy)
 	testing.expect(t, before > 0)
-	c.money = max(c.money, STAMP_COST)
+	ensure_stamp_money(c)
 	stamped := false
 	for py in sy - COVERAGE_RANGE ..= sy + COVERAGE_RANGE {
 		for px in sx - COVERAGE_RANGE ..= sx + COVERAGE_RANGE {
@@ -2479,16 +2492,18 @@ crime_nibbles_shops_not_houses :: proc(t: ^testing.T) {
 	await_finished(c, house[0], house[1])
 	tick(c, pick_first)
 	await_finished(c, shop[0], shop[1])
-	reset_health(c)
 	testing.expect(t, lot_crime(c, shop[0], shop[1]) >= CRIME_HIGH)
+	house_before, house_ok := building_health_at(c, house[0], house[1])
+	shop_before, shop_ok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, house_ok && shop_ok)
 	for _ in 0 ..< 5 {
 		tick(c, pick_first)
 	}
-	hh, hok := building_health_at(c, house[0], house[1])
-	sh, sok := building_health_at(c, shop[0], shop[1])
-	testing.expect(t, hok && sok)
-	testing.expect_value(t, hh, f32(1))
-	testing.expect(t, sh < 1)
+	house_after, house_after_ok := building_health_at(c, house[0], house[1])
+	shop_after, shop_after_ok := building_health_at(c, shop[0], shop[1])
+	testing.expect(t, house_after_ok && shop_after_ok)
+	testing.expect(t, house_after >= house_before)
+	testing.expect(t, shop_after < shop_before)
 }
 
 @(test)
@@ -2612,7 +2627,7 @@ graph_records_population_jobs_money_and_happiness :: proc(t: ^testing.T) {
 	await_full_health(c, p[0][0], p[0][1])
 	expect_building(t, c, p[0][0], p[0][1], .House)
 	expect_building(t, c, p[1][0], p[1][1], .Shop)
-	for c.ticks % MONTH_TICKS != 0 {
+	for city_day(c) != 1 {
 		tick(c, pick_first)
 	}
 	tick(c, pick_first)
@@ -2708,7 +2723,7 @@ pick_ignite :: proc(n: int) -> int {
 }
 
 advance_month :: proc(c: ^City, pick: Pick) {
-	for c.ticks % MONTH_TICKS != 0 {
+	for city_day(c) != 1 {
 		tick(c, pick_first)
 	}
 	tick(c, pick)
@@ -2994,14 +3009,6 @@ await_full_health :: proc(c: ^City, x, y: int) {
 	}
 }
 
-reset_health :: proc(c: ^City) {
-	for &b in c.buildings {
-		if b.present && b.remaining == 0 {
-			b.health = 1
-		}
-	}
-}
-
 @(test)
 construction_timer_runs_from_birth_not_the_calendar_month :: proc(t: ^testing.T) {
 	c := city_new()
@@ -3171,13 +3178,20 @@ outage_does_not_freeze_construction_remaining :: proc(t: ^testing.T) {
 	p, ok := supplied_plots(c, 1)
 	testing.expect(t, ok)
 	hx, hy := p[0][0], p[0][1]
+	for _ in 0 ..< MONTH_TICKS / 2 {
+		tick(c, pick_first)
+	}
 	paint_zone(c, hx, hy, .Residential)
 	tick(c, pick_first)
+	testing.expect(t, building_construction_at(c, hx, hy))
+	advance_month(c, pick_outage)
+	testing.expect(t, city_outage(c))
+	testing.expect(t, building_construction_at(c, hx, hy))
 	before, bok := building_construction_remaining_at(c, hx, hy)
 	testing.expect(t, bok)
 	testing.expect(t, before > 0)
-	c.outage = true
 	tick(c, pick_first)
+	testing.expect(t, city_outage(c))
 	after, aok := building_construction_remaining_at(c, hx, hy)
 	testing.expect(t, aok)
 	testing.expect_value(t, after, before - 1)
@@ -3358,7 +3372,7 @@ income_then_maintenance_then_money_floors_at_zero :: proc(t: ^testing.T) {
 	await_finished(c, p[0][0], p[0][1])
 	testing.expect_value(t, city_population(c), 4)
 	testing.expect(t, maintenance_cost(c) > 4)
-	c.money = 0
+	city_set_money(c, 0)
 	tick(c, pick_first)
 	testing.expect_value(t, city_money(c), 0)
 	testing.expect(t, !paint_road(c, 63, 63))
